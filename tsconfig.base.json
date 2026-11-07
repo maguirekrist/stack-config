@@ -1,0 +1,16 @@
+{
+  // Settings for Effect's language service, shared by every project. A project
+  // extends this file and leaves `plugins` out of its own compilerOptions,
+  // because a project's `plugins` would replace this list.
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // Oxlint reports Effect's diagnostics, so the typecheck doesn't repeat them.
+        "diagnostics": false,
+        // Effect is imported one module at a time: import * as Effect from "effect/Effect".
+        "namespaceImportPackages": ["effect"]
+      }
+    ]
+  }
+}

@@ -86,6 +86,11 @@ export const rules = {
     "require-unicode-regexp": "error",
     // A service's key names the module that declares it, so keys never collide.
     "effecttsgo/deterministic-keys": "error",
+    // Effect is imported one module at a time, `import * as Effect from
+    // "effect/Effect"`, as Alchemy does. It's the form Effect's unstable modules
+    // already need, so every Effect import looks the same. The package list is
+    // in tsconfig.base.json.
+    "effecttsgo/prefer-namespace-import": "error",
     // A rule is switched off for a path in the config, with its reason, never
     // by a comment in the code.
     "stack/no-disable-comments": "error",

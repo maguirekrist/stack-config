@@ -1,6 +1,6 @@
 {
   "name": "@maguirekrist/stack-config",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The shared lint setup and coding standards for Foldkit, Effect and Alchemy Domain projects.",
   "type": "module",
   "repository": {
@@ -17,10 +17,12 @@
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
     },
+    "./tsconfig.base.json": "./tsconfig.base.json",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "tsconfig.base.json",
     "README.md",
     "CODING_STANDARDS.md"
   ],

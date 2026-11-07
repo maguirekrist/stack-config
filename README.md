@@ -1,0 +1,76 @@
+# stack-config
+
+The lint setup and coding standards shared by projects built on Foldkit, Effect and Alchemy Domain. Read this before changing a project's lint setup, or when a rule seems to stand in your way. Review reads [CODING_STANDARDS.md](CODING_STANDARDS.md).
+
+## What runs
+
+The rules start from what the stack's authors run:
+
+- **Effect:** every rule Effect recommends (its `strict` preset), as errors, and its native-API rules inside Effect code, as Alchemy runs them.
+- **Oxlint:** its `correctness`, `suspicious` and `perf` groups, the type-safety TypeScript rules, and the TypeScript and unicorn rules Alchemy adds.
+- **Foldkit:** its recommended rules, in a project's Foldkit app folders only.
+- **Our own:** a few rules kept because they make the code clearer, including `stack/no-disable-comments` from this package's plugin.
+
+[src/oxlint.ts](src/oxlint.ts) is the list, with each choice's reason beside it. A rule earns a place in it only by improving the code; a rule that mostly produces workarounds doesn't.
+
+## Using it
+
+Install it from a tag, beside the tools it configures:
+
+```json
+{
+  "scripts": { "prepare": "effect-tsgo patch --oxlint && husky" },
+  "devDependencies": {
+    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.0.0",
+    "@effect/tsgo": "0.64.1",
+    "@foldkit/oxlint-plugin": "0.15.4",
+    "oxlint": "1.90.0",
+    "oxlint-tsgolint": "7.0.2005"
+  }
+}
+```
+
+A project's `oxlint.config.ts` adds only its own paths: its Foldkit app folders, its exceptions and its import boundaries.
+
+```ts
+import { defineConfig } from "oxlint";
+import * as stack from "@maguirekrist/stack-config/oxlint";
+
+export default defineConfig({
+  extends: stack.effectPresets,
+  plugins: stack.plugins,
+  jsPlugins: stack.jsPlugins,
+  categories: stack.categories,
+  options: {
+    typeAware: true,
+    maxWarnings: 0,
+    reportUnusedDisableDirectives: "error",
+  },
+  rules: stack.rules,
+  overrides: [...stack.foldkitOverrides(["packages/web"])],
+});
+```
+
+## The bar
+
+- Lint fails on any warning.
+- The pre-commit hook (husky) formats staged files with Prettier through lint-staged, `{ "*": "prettier --ignore-unknown --write" }`, then runs lint, the typecheck and the tests. It never runs a lint fixer, which can change behavior.
+- CI runs the project's `check` on every pull request. It's the gate that counts, because `--no-verify` skips hooks.
+- Prettier runs on its defaults; a project adds only the plugins its file types need.
+
+## Satisfying a rule
+
+Fix the code the idiomatic way the rule's message describes. Each rule documents itself:
+
+- an Oxlint rule at `https://oxc.rs/docs/guide/usage/linter/rules/<plugin>/<rule>.html`;
+- an Effect rule with `gh api repos/Effect-TS/tsgo/contents/docs/rules/<rule>.md --jq .content | base64 -d`.
+
+A fix that only makes the warning go away, such as a constant named for a literal or a parameter object built to get under a count, is not a fix.
+
+## Exceptions
+
+A rule is switched off for a path in the project's `oxlint.config.ts`, with a one-line reason beside it, and only with the project owner's agreement. `stack/no-disable-comments` rejects `eslint-disable`, `oxlint-disable` and `@effect-diagnostics` comments in code. The project's config is the list of its exceptions.
+
+## Changing the shared setup
+
+Change it here and tag a release. Each project takes it by moving its tag, like any other dependency upgrade. `pnpm run check` builds `dist`, which is committed because projects install from git, and fails if `dist` is stale.

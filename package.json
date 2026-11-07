@@ -1,0 +1,46 @@
+{
+  "name": "@maguirekrist/stack-config",
+  "version": "1.0.0",
+  "description": "The shared lint setup and coding standards for Foldkit, Effect and Alchemy Domain projects.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maguirekrist/stack-config.git"
+  },
+  "packageManager": "pnpm@12.16.1",
+  "exports": {
+    "./oxlint": {
+      "types": "./dist/oxlint.d.ts",
+      "default": "./dist/oxlint.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CODING_STANDARDS.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test",
+    "check": "prettier --check . && tsc && git diff --exit-code dist && node --test"
+  },
+  "peerDependencies": {
+    "@effect/tsgo": "^0.64.1",
+    "@foldkit/oxlint-plugin": "^0.15.4",
+    "oxlint": "^1.90.0"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "0.64.1",
+    "@foldkit/oxlint-plugin": "0.15.4",
+    "@oxlint/plugins": "1.90.0",
+    "@types/node": "26.6.6",
+    "oxlint": "1.90.0",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2"
+  }
+}

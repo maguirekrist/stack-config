@@ -6,7 +6,7 @@ The lint setup and coding standards shared by projects built on Foldkit, Effect 
 
 The rules start from what the stack's authors run:
 
-- **Effect:** every rule Effect recommends (its `strict` preset), as errors, and its native-API rules inside Effect code, as Alchemy runs them.
+- **Effect:** every rule Effect recommends (its `strict` preset), as errors, every rule of its `style` preset but `missing-pipeable-signature`, and its native-API rules inside Effect code, as Alchemy runs them. Effect is imported by name from its barrels, `import { Effect, Schema } from "effect"`.
 - **Oxlint:** its `correctness`, `suspicious` and `perf` groups, the type-safety TypeScript rules, and the TypeScript and unicorn rules Alchemy adds.
 - **Foldkit:** its recommended rules, in a project's Foldkit app folders only.
 - **Our own:** a few rules kept because they make the code clearer, including `stack/no-disable-comments` from this package's plugin.
@@ -21,7 +21,7 @@ Install it from a tag, beside the tools it configures:
 {
   "scripts": { "prepare": "effect-tsgo patch --oxlint && husky" },
   "devDependencies": {
-    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.1.1",
+    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.2.0",
     "@effect/tsgo": "0.64.1",
     "@foldkit/oxlint-plugin": "0.15.4",
     "oxlint": "1.90.0",

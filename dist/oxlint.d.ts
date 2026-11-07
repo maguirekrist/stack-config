@@ -9,7 +9,11 @@ import type { OxlintConfig } from "oxlint";
  */
 type Rules = NonNullable<OxlintConfig["rules"]>;
 type Override = NonNullable<OxlintConfig["overrides"]>[number];
-/** Every rule Effect recommends, as an error. */
+/**
+ * Every rule Effect recommends, as an error, and every rule of its style
+ * preset. Strict comes last so its errors win; the style rules it leaves out
+ * stay warnings, which fail lint all the same.
+ */
 export declare const effectPresets: NonNullable<OxlintConfig["extends"]>;
 export declare const plugins: NonNullable<OxlintConfig["plugins"]>;
 export declare const jsPlugins: NonNullable<OxlintConfig["jsPlugins"]>;

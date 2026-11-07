@@ -8,11 +8,10 @@
         "name": "@effect/language-service",
         // Oxlint reports Effect's diagnostics, so the typecheck doesn't repeat them.
         "diagnostics": false,
-        // Effect is imported one module at a time: import * as Effect from "effect/Effect".
-        // Following top-level re-exports applies that to helpers such as pipe too,
-        // so it's Function.pipe, never a bare pipe imported from "effect".
-        "namespaceImportPackages": ["effect"],
-        "topLevelNamedReexports": "follow"
+        // Effect is imported by name from its barrels, as Effect's style preset
+        // asks: import { Effect, Schema } from "effect", and
+        // import { HttpClient } from "effect/http" for a sub-package.
+        "barrelImportPackages": ["effect"]
       }
     ]
   }

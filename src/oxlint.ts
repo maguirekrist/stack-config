@@ -1,5 +1,5 @@
 import foldkitRecommended from "@foldkit/oxlint-plugin/recommended.json" with { type: "json" };
-import { effectNative, strict } from "@effect/tsgo/oxlint-presets";
+import { effectNative, strict, style } from "@effect/tsgo/oxlint-presets";
 import type { OxlintConfig } from "oxlint";
 
 /**
@@ -14,8 +14,15 @@ import type { OxlintConfig } from "oxlint";
 type Rules = NonNullable<OxlintConfig["rules"]>;
 type Override = NonNullable<OxlintConfig["overrides"]>[number];
 
-/** Every rule Effect recommends, as an error. */
-export const effectPresets: NonNullable<OxlintConfig["extends"]> = [strict];
+/**
+ * Every rule Effect recommends, as an error, and every rule of its style
+ * preset. Strict comes last so its errors win; the style rules it leaves out
+ * stay warnings, which fail lint all the same.
+ */
+export const effectPresets: NonNullable<OxlintConfig["extends"]> = [
+  style,
+  strict,
+];
 
 /** Effect's native-API rules that apply inside Effect code, as Alchemy runs them. */
 const insideEffect: Rules = Object.fromEntries(
@@ -54,6 +61,11 @@ export const rules: Rules = {
   "effecttsgo/strict-effect-provide": "off",
   "effecttsgo/return-effect-in-gen": "off",
   "effecttsgo/leaking-requirements": "off",
+  // Off, though Effect's style preset has it: it asks every exported function
+  // for a pipeable overload, which is for library APIs. This stack exports
+  // framework entry points, such as Foldkit's init, update and view, and
+  // helpers called data-first, so the overloads would be wrappers nobody pipes.
+  "effecttsgo/missing-pipeable-signature": "off",
 
   // Type safety.
   "typescript/no-explicit-any": "error",
@@ -108,11 +120,6 @@ export const rules: Rules = {
   "require-unicode-regexp": "error",
   // A service's key names the module that declares it, so keys never collide.
   "effecttsgo/deterministic-keys": "error",
-  // Effect is imported one module at a time, `import * as Effect from
-  // "effect/Effect"`, as Alchemy does. It's the form Effect's unstable modules
-  // already need, so every Effect import looks the same. The package list is
-  // in tsconfig.base.json.
-  "effecttsgo/prefer-namespace-import": "error",
   // A rule is switched off for a path in the config, with its reason, never
   // by a comment in the code.
   "stack/no-disable-comments": "error",

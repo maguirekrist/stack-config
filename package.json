@@ -1,6 +1,6 @@
 {
   "name": "@maguirekrist/stack-config",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "The shared lint setup and coding standards for Foldkit, Effect and Alchemy Domain projects.",
   "type": "module",
   "repository": {

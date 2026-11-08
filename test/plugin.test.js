@@ -48,3 +48,36 @@ new RuleTester().run("no-infinite-loops", plugin.rules["no-infinite-loops"], {
     { code: "for (let i = 0; ; i++) { break; }", errors: loop },
   ],
 });
+
+const ts = (code) => ({ code, filename: "absence.ts" });
+
+new RuleTester().run("prefer-option", plugin.rules["prefer-option"], {
+  valid: [
+    ts(
+      'import { Option } from "effect";\nconst seen: Option.Option<number> = Option.none();',
+    ),
+    ts("declare const found: unknown;\nconst missing = found === null;"),
+    ts("declare const found: unknown;\nconst present = found != null;"),
+    ts(
+      'import { Schema } from "effect";\nconst Notice = Schema.OptionFromNullOr(Schema.String);',
+    ),
+    ts('const label = "null";'),
+  ],
+  invalid: [
+    { ...ts("let watch = null;"), errors: [{ messageId: "value" }] },
+    {
+      ...ts("const since = (seen: boolean) => (seen ? 1 : null);"),
+      errors: [{ messageId: "value" }],
+    },
+    {
+      ...ts("type Watch = number | null;"),
+      errors: [{ messageId: "type" }],
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nconst Notice = Schema.NullOr(Schema.String);',
+      ),
+      errors: [{ messageId: "schema" }],
+    },
+  ],
+});

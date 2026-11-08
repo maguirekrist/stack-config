@@ -57,12 +57,64 @@ const noInfiniteLoops: Rule = {
   }),
 };
 
+const EQUALITY = new Set(["===", "!==", "==", "!="]);
+
+/**
+ * Absence is an `Option`. `null` stays only on the wire, where
+ * `Schema.OptionFromNullOr` turns it into one, and in a comparison, which
+ * reading a library's value needs.
+ */
+const preferOption: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr.",
+    },
+    messages: {
+      value:
+        "Absence is an Option: Option.none() for nothing, Option.some(value) for something. Where a library or the wire hands over null, convert it with Option.fromNullishOr or Schema.OptionFromNullOr.",
+      type: "Absence is an Option: write Option<T> in place of T | null. A wire schema decodes null into one with Schema.OptionFromNullOr.",
+      schema:
+        "Schema.OptionFromNullOr(X) keeps null on the wire and gives the code an Option.",
+    },
+  },
+  create: (context) => ({
+    Literal: (node) => {
+      if (node.raw !== "null") {
+        return;
+      }
+      const { parent } = node;
+      if (parent.type === "BinaryExpression" && EQUALITY.has(parent.operator)) {
+        return;
+      }
+      context.report({ messageId: "value", node });
+    },
+    TSNullKeyword: (node) => {
+      context.report({ messageId: "type", node });
+    },
+    CallExpression: (node) => {
+      const { callee } = node;
+      if (
+        callee.type === "MemberExpression" &&
+        callee.object.type === "Identifier" &&
+        callee.object.name === "Schema" &&
+        callee.property.type === "Identifier" &&
+        callee.property.name === "NullOr"
+      ) {
+        context.report({ messageId: "schema", node: callee });
+      }
+    },
+  }),
+};
+
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin: Plugin = {
   meta: { name: "stack" },
   rules: {
     "no-disable-comments": noDisableComments,
     "no-infinite-loops": noInfiniteLoops,
+    "prefer-option": preferOption,
   },
 };
 

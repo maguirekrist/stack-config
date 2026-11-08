@@ -21,8 +21,8 @@ Install it from a tag, beside the tools it configures:
 {
   "scripts": { "prepare": "effect-tsgo patch --oxlint && husky" },
   "devDependencies": {
-    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.2.0",
-    "@effect/tsgo": "0.64.1",
+    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.5.0",
+    "@effect/tsgo": "0.67.5",
     "@foldkit/oxlint-plugin": "0.15.4",
     "oxlint": "1.90.0",
     "oxlint-tsgolint": "7.0.2005"

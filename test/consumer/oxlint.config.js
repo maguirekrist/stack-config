@@ -7,5 +7,6 @@ export default {
     "stack/no-disable-comments": stack.rules["stack/no-disable-comments"],
     "stack/no-infinite-loops": stack.rules["stack/no-infinite-loops"],
     "no-constant-condition": stack.rules["no-constant-condition"],
+    "stack/prefer-option": stack.rules["stack/prefer-option"],
   },
 };

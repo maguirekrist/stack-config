@@ -127,6 +127,8 @@ export const rules: Rules = {
   // and Schedule, or Effect.forever, instead of a loop it breaks out of.
   "stack/no-infinite-loops": "error",
   "no-constant-condition": ["error", { checkLoops: "all" }],
+  // Absence is an Option, and null stays on the wire.
+  "stack/prefer-option": "error",
 
   // Plain JavaScript hygiene.
   "no-underscore-dangle": ["error", { allow: ["_tag"] }],

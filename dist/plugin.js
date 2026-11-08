@@ -25,9 +25,35 @@ const noDisableComments = {
         },
     }),
 };
+/**
+ * `for (;;)` has no condition, so `no-constant-condition` never sees it. That
+ * rule, with `checkLoops: "all"`, catches the other loops written to run
+ * forever.
+ */
+const noInfiniteLoops = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "A loop says what ends it, so a `for` statement always has a condition.",
+        },
+        messages: {
+            loop: "A loop with no condition runs until something inside it breaks out. Say what it repeats over: read with a Stream, repeat with Effect.repeat and a Schedule, or use Effect.forever for work that truly never ends.",
+        },
+    },
+    create: (context) => ({
+        ForStatement: (node) => {
+            if (node.test === null) {
+                context.report({ messageId: "loop", node });
+            }
+        },
+    }),
+};
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin = {
     meta: { name: "stack" },
-    rules: { "no-disable-comments": noDisableComments },
+    rules: {
+        "no-disable-comments": noDisableComments,
+        "no-infinite-loops": noInfiniteLoops,
+    },
 };
 export default plugin;

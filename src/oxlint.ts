@@ -123,6 +123,10 @@ export const rules: Rules = {
   // A rule is switched off for a path in the config, with its reason, never
   // by a comment in the code.
   "stack/no-disable-comments": "error",
+  // A loop says what ends it. Effect code repeats with Stream, Effect.repeat
+  // and Schedule, or Effect.forever, instead of a loop it breaks out of.
+  "stack/no-infinite-loops": "error",
+  "no-constant-condition": ["error", { checkLoops: "all" }],
 
   // Plain JavaScript hygiene.
   "no-underscore-dangle": ["error", { allow: ["_tag"] }],

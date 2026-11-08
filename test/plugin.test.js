@@ -34,3 +34,17 @@ new RuleTester().run(
     ],
   },
 );
+
+const loop = [{ messageId: "loop" }];
+
+new RuleTester().run("no-infinite-loops", plugin.rules["no-infinite-loops"], {
+  valid: [
+    "for (let i = 0; i < 3; i++) {}",
+    "for (const item of [1, 2]) {}",
+    "let n = 3; while (n > 0) { n--; }",
+  ],
+  invalid: [
+    { code: "for (;;) { break; }", errors: loop },
+    { code: "for (let i = 0; ; i++) { break; }", errors: loop },
+  ],
+});

@@ -59,6 +59,9 @@ const noInfiniteLoops: Rule = {
 
 const EQUALITY = new Set(["===", "!==", "==", "!="]);
 
+/** `Schema.NullOr(X)`, and `Schema.Null` as a member of a union. */
+const NULL_SCHEMAS = new Set(["NullOr", "Null"]);
+
 /**
  * Absence is an `Option`. `null` stays only on the wire, where
  * `Schema.OptionFromNullOr` turns it into one, and in a comparison, which
@@ -69,7 +72,7 @@ const preferOption: Rule = {
     type: "suggestion",
     docs: {
       description:
-        "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr.",
+        "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr or a union with Schema.Null.",
     },
     messages: {
       value:
@@ -93,16 +96,14 @@ const preferOption: Rule = {
     TSNullKeyword: (node) => {
       context.report({ messageId: "type", node });
     },
-    CallExpression: (node) => {
-      const { callee } = node;
+    MemberExpression: (node) => {
       if (
-        callee.type === "MemberExpression" &&
-        callee.object.type === "Identifier" &&
-        callee.object.name === "Schema" &&
-        callee.property.type === "Identifier" &&
-        callee.property.name === "NullOr"
+        node.object.type === "Identifier" &&
+        node.object.name === "Schema" &&
+        node.property.type === "Identifier" &&
+        NULL_SCHEMAS.has(node.property.name)
       ) {
-        context.report({ messageId: "schema", node: callee });
+        context.report({ messageId: "schema", node });
       }
     },
   }),

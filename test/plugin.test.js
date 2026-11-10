@@ -79,6 +79,12 @@ new RuleTester().run("prefer-option", plugin.rules["prefer-option"], {
       ),
       errors: [{ messageId: "schema" }],
     },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nconst Notice = Schema.Union([Schema.String, Schema.Null]);',
+      ),
+      errors: [{ messageId: "schema" }],
+    },
   ],
 });
 

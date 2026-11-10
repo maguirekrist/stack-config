@@ -49,6 +49,8 @@ const noInfiniteLoops = {
     }),
 };
 const EQUALITY = new Set(["===", "!==", "==", "!="]);
+/** `Schema.NullOr(X)`, and `Schema.Null` as a member of a union. */
+const NULL_SCHEMAS = new Set(["NullOr", "Null"]);
 /**
  * Absence is an `Option`. `null` stays only on the wire, where
  * `Schema.OptionFromNullOr` turns it into one, and in a comparison, which
@@ -58,7 +60,7 @@ const preferOption = {
     meta: {
         type: "suggestion",
         docs: {
-            description: "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr.",
+            description: "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr or a union with Schema.Null.",
         },
         messages: {
             value: "Absence is an Option: Option.none() for nothing, Option.some(value) for something. Where a library or the wire hands over null, convert it with Option.fromNullishOr or Schema.OptionFromNullOr.",
@@ -80,14 +82,12 @@ const preferOption = {
         TSNullKeyword: (node) => {
             context.report({ messageId: "type", node });
         },
-        CallExpression: (node) => {
-            const { callee } = node;
-            if (callee.type === "MemberExpression" &&
-                callee.object.type === "Identifier" &&
-                callee.object.name === "Schema" &&
-                callee.property.type === "Identifier" &&
-                callee.property.name === "NullOr") {
-                context.report({ messageId: "schema", node: callee });
+        MemberExpression: (node) => {
+            if (node.object.type === "Identifier" &&
+                node.object.name === "Schema" &&
+                node.property.type === "Identifier" &&
+                NULL_SCHEMAS.has(node.property.name)) {
+                context.report({ messageId: "schema", node });
             }
         },
     }),

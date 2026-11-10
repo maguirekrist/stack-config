@@ -124,6 +124,14 @@ const isSchemaCall = (node: ESTree.Node, name: string): boolean =>
   node.callee.property.name === name;
 
 /**
+ * Whether a `_tag` type names cases: a string literal, or a union of them. A
+ * bound such as `{ readonly _tag: string }` asks only that a value has a tag.
+ */
+const namesCases = (type: ESTree.TSType): boolean =>
+  (type.type === "TSLiteralType" && type.literal.type === "Literal") ||
+  (type.type === "TSUnionType" && type.types.every(namesCases));
+
+/**
  * A tagged union is an Effect Schema, so each union is declared one way and
  * gets its constructors, guards and `match` from the schema. The rule reads
  * syntax, not types, so it reports every hand-written tag: an object literal
@@ -163,7 +171,12 @@ const preferTaggedUnion: Rule = {
       context.report({ messageId: "value", node: tag });
     },
     TSPropertySignature: (node) => {
-      if (!node.computed && isTagKey(node.key)) {
+      if (
+        !node.computed &&
+        isTagKey(node.key) &&
+        node.typeAnnotation !== null &&
+        namesCases(node.typeAnnotation.typeAnnotation)
+      ) {
         context.report({ messageId: "type", node });
       }
     },

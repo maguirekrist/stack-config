@@ -103,6 +103,9 @@ new RuleTester().run(
         'import { Schema } from "effect";\nconst Seen = Schema.Union([Schema.String, Schema.Number]);',
       ),
       ts("declare const held: object;\nconst { _tag } = Object(held);"),
+      ts(
+        "const tagOf = <E extends { readonly _tag: string }>(error: E) => error._tag;",
+      ),
       ts('declare const held: unknown;\nconst named = { tag: "Answered" };'),
       ts(
         'import { Schema } from "effect";\nconst Old = Schema.Struct({ _tag: Schema.Literal("Old") });',

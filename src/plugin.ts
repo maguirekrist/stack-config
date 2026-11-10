@@ -231,6 +231,113 @@ const preferTaggedUnion: Rule = {
   }),
 };
 
+/** Whether a type is `typeof <name>.Type`. */
+const isTypeOf = (type: ESTree.TSType, name: string): boolean =>
+  type.type === "TSTypeQuery" &&
+  type.exprName.type === "TSQualifiedName" &&
+  type.exprName.left.type === "Identifier" &&
+  type.exprName.left.name === name &&
+  type.exprName.right.name === "Type";
+
+/** Whether an expression is `Schema.Struct.Type`. */
+const isStructType = (node: ESTree.Node): boolean =>
+  node.type === "MemberExpression" &&
+  node.property.type === "Identifier" &&
+  node.property.name === "Type" &&
+  node.object.type === "MemberExpression" &&
+  node.object.property.type === "Identifier" &&
+  node.object.property.name === "Struct" &&
+  node.object.object.type === "Identifier" &&
+  node.object.object.name === "Schema";
+
+/** Whether an interface extends `Schema.Struct.Type<typeof <name>Fields>`. */
+const extendsItsFields = (
+  node: ESTree.TSInterfaceDeclaration,
+  name: string,
+): boolean =>
+  node.extends.some(({ expression, typeArguments }) => {
+    const [fields] = typeArguments?.params ?? [];
+    return (
+      isStructType(expression) &&
+      fields !== undefined &&
+      fields.type === "TSTypeQuery" &&
+      fields.exprName.type === "Identifier" &&
+      fields.exprName.name === `${name}Fields`
+    );
+  });
+
+/** A module's top-level statement, with an `export` taken off. */
+const declared = (statement: ESTree.Node): ESTree.Node | undefined =>
+  statement.type === "ExportNamedDeclaration"
+    ? (statement.declaration ?? undefined)
+    : statement;
+
+/**
+ * A type named after a schema is the schema's own `Type`, so the two can't
+ * drift apart. A schema that refers to itself needs a written type to break
+ * the cycle: its other fields are declared once, as `<Name>Fields`, and its
+ * interface extends `Schema.Struct.Type<typeof <Name>Fields>` with only the
+ * field that refers back. The rule reads syntax, so a schema is a top-level
+ * `const` reached from `Schema`.
+ */
+const typeFromSchema: Rule = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "A type named after a schema is `typeof X.Type`, or, for a schema that refers to itself, an interface extending `Schema.Struct.Type<typeof XFields>`.",
+    },
+    messages: {
+      drift:
+        "Write `type {{name}} = typeof {{name}}.Type`, so the type and the schema can't drift apart. If {{name}} refers to itself, declare its other fields once as `{{name}}Fields`, spread them into the schema, and write `interface {{name}} extends Schema.Struct.Type<typeof {{name}}Fields>` with only the field that refers back.",
+    },
+  },
+  create: (context) => ({
+    Program: (program) => {
+      const statements = program.body.flatMap((statement) => {
+        const node = declared(statement);
+        return node === undefined ? [] : [node];
+      });
+      const schemas = new Set(
+        statements.flatMap((node) =>
+          node.type === "VariableDeclaration"
+            ? node.declarations.flatMap(({ id, init }) =>
+                id.type === "Identifier" &&
+                init !== null &&
+                init !== undefined &&
+                rootsAtSchema(init)
+                  ? [id.name]
+                  : [],
+              )
+            : [],
+        ),
+      );
+      for (const node of statements) {
+        if (node.type === "TSTypeAliasDeclaration") {
+          const { name } = node.id;
+          if (schemas.has(name) && !isTypeOf(node.typeAnnotation, name)) {
+            context.report({
+              messageId: "drift",
+              node: node.id,
+              data: { name },
+            });
+          }
+        }
+        if (node.type === "TSInterfaceDeclaration") {
+          const { name } = node.id;
+          if (schemas.has(name) && !extendsItsFields(node, name)) {
+            context.report({
+              messageId: "drift",
+              node: node.id,
+              data: { name },
+            });
+          }
+        }
+      }
+    },
+  }),
+};
+
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin: Plugin = {
   meta: { name: "stack" },
@@ -239,6 +346,7 @@ const plugin: Plugin = {
     "no-infinite-loops": noInfiniteLoops,
     "prefer-option": preferOption,
     "prefer-tagged-union": preferTaggedUnion,
+    "type-from-schema": typeFromSchema,
   },
 };
 

@@ -45,3 +45,13 @@ test("a project's config fails on a hand-written tagged union", () => {
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(run.stdout, /stack\(prefer-tagged-union\)/u);
 });
+
+test("a project's config fails on a type written beside its schema", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "schema.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout, /stack\(type-from-schema\)/u);
+});

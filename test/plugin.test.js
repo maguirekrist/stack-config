@@ -157,3 +157,63 @@ new RuleTester().run(
     ],
   },
 );
+
+const drift = [{ messageId: "drift" }];
+
+new RuleTester().run("type-from-schema", plugin.rules["type-from-schema"], {
+  valid: [
+    ts(
+      'import { Schema } from "effect";\nexport const Book = Schema.Struct({ title: Schema.String });\nexport type Book = typeof Book.Type;',
+    ),
+    ts(
+      'import { Schema } from "effect";\nexport const Id = Schema.String.pipe(Schema.brand("Id"));\nexport type Id = typeof Id.Type;',
+    ),
+    ts(
+      'import { Schema } from "effect";\nconst LocatorFields = { nth: Schema.optionalKey(Schema.Int) };\nexport interface Locator extends Schema.Struct.Type<typeof LocatorFields> {\n  readonly within?: Locator;\n}\nexport const Locator = Schema.Struct({\n  ...LocatorFields,\n  within: Schema.optionalKey(Schema.suspend((): Schema.Codec<Locator> => Locator)),\n});',
+    ),
+    ts(
+      'import { Data } from "effect";\nexport type Endpoint = Data.TaggedEnum<{ Cdp: { readonly url: string } }>;\nexport const Endpoint = Data.taggedEnum<Endpoint>();',
+    ),
+    ts(
+      "export interface Point { readonly left: number; readonly top: number }",
+    ),
+  ],
+  invalid: [
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport interface Book { readonly title: string }\nexport const Book = Schema.Struct({ title: Schema.String });',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport type Book = { readonly title: string };\nexport const Book = Schema.Struct({ title: Schema.String });',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport const Protocol = Schema.Literals(["Cdp", "Bidi"]);\nexport type Protocol = "Cdp" | "Bidi";',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport const Book = Schema.Struct({ title: Schema.String });\nexport type Book = typeof Book.Encoded;',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport interface Locator {\n  readonly within?: Locator;\n  readonly nth?: number;\n}\nexport const Locator = Schema.Struct({\n  nth: Schema.optionalKey(Schema.Int),\n  within: Schema.optionalKey(Schema.suspend((): Schema.Codec<Locator> => Locator)),\n});',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nconst Other = { nth: Schema.optionalKey(Schema.Int) };\nexport interface Locator extends Schema.Struct.Type<typeof Other> {\n  readonly within?: Locator;\n}\nexport const Locator = Schema.Struct({ ...Other });',
+      ),
+      errors: drift,
+    },
+  ],
+});

@@ -49,6 +49,8 @@ const noInfiniteLoops = {
     }),
 };
 const EQUALITY = new Set(["===", "!==", "==", "!="]);
+/** `Schema.NullOr(X)`, and `Schema.Null` as a member of a union. */
+const NULL_SCHEMAS = new Set(["NullOr", "Null"]);
 /**
  * Absence is an `Option`. `null` stays only on the wire, where
  * `Schema.OptionFromNullOr` turns it into one, and in a comparison, which
@@ -58,7 +60,7 @@ const preferOption = {
     meta: {
         type: "suggestion",
         docs: {
-            description: "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr.",
+            description: "Absence is an Option: no null values, no null in types, and Schema.OptionFromNullOr in place of Schema.NullOr or a union with Schema.Null.",
         },
         messages: {
             value: "Absence is an Option: Option.none() for nothing, Option.some(value) for something. Where a library or the wire hands over null, convert it with Option.fromNullishOr or Schema.OptionFromNullOr.",
@@ -80,14 +82,112 @@ const preferOption = {
         TSNullKeyword: (node) => {
             context.report({ messageId: "type", node });
         },
+        MemberExpression: (node) => {
+            if (node.object.type === "Identifier" &&
+                node.object.name === "Schema" &&
+                node.property.type === "Identifier" &&
+                NULL_SCHEMAS.has(node.property.name)) {
+                context.report({ messageId: "schema", node });
+            }
+        },
+    }),
+};
+/** Whether a property key, plain or quoted, is `_tag`. */
+const isTagKey = (key) => (key.type === "Identifier" && key.name === "_tag") ||
+    (key.type === "Literal" && key.value === "_tag");
+/** Whether a node is the call `Schema.<name>(...)`. */
+const isSchemaCall = (node, name) => node.type === "CallExpression" &&
+    node.callee.type === "MemberExpression" &&
+    node.callee.object.type === "Identifier" &&
+    node.callee.object.name === "Schema" &&
+    node.callee.property.type === "Identifier" &&
+    node.callee.property.name === name;
+/**
+ * Whether a callee is reached from `Schema`, as in `Schema.Struct`,
+ * `Schema.Class<A>("A")` or `Schema.decodeSync(X)`: its object arguments define
+ * a schema or are encoded input, not values.
+ */
+const rootsAtSchema = (callee) => {
+    if (callee.type === "Identifier") {
+        return callee.name === "Schema";
+    }
+    if (callee.type === "MemberExpression") {
+        return rootsAtSchema(callee.object);
+    }
+    if (callee.type === "CallExpression") {
+        return rootsAtSchema(callee.callee);
+    }
+    return false;
+};
+/**
+ * Whether a `_tag` type names cases: a string literal, or a union of them. A
+ * bound such as `{ readonly _tag: string }` asks only that a value has a tag.
+ */
+const namesCases = (type) => (type.type === "TSLiteralType" && type.literal.type === "Literal") ||
+    (type.type === "TSUnionType" && type.types.every(namesCases));
+/**
+ * A tagged union is an Effect Schema, so each union is declared one way and
+ * gets its constructors, guards and `match` from the schema. The rule reads
+ * syntax, not types, so it reports every hand-written tag: an object literal
+ * with a `_tag`, a type with a `_tag` member, and a `Schema.Union` of inline
+ * `Schema.TaggedStruct`s with distinct tags. An object handed to a `Schema`
+ * call defines a schema or is encoded input, so it is left alone.
+ */
+const preferTaggedUnion = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "A tagged union is a Schema.TaggedUnion, its values made with the schema's constructors and its types taken from the schema.",
+        },
+        messages: {
+            value: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, or Case.make({ ... }) for a Schema.TaggedStruct. A tagged error is a Schema.TaggedError class, made with new.",
+            type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
+            union: "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
+        },
+    },
+    create: (context) => ({
+        ObjectExpression: (node) => {
+            const tag = node.properties.find((property) => property.type === "Property" &&
+                !property.computed &&
+                isTagKey(property.key));
+            if (tag === undefined) {
+                return;
+            }
+            const { parent } = node;
+            if (parent.type === "CallExpression" &&
+                parent.arguments.includes(node) &&
+                rootsAtSchema(parent.callee)) {
+                return;
+            }
+            context.report({ messageId: "value", node: tag });
+        },
+        TSPropertySignature: (node) => {
+            if (!node.computed &&
+                isTagKey(node.key) &&
+                node.typeAnnotation !== null &&
+                namesCases(node.typeAnnotation.typeAnnotation)) {
+                context.report({ messageId: "type", node });
+            }
+        },
         CallExpression: (node) => {
-            const { callee } = node;
-            if (callee.type === "MemberExpression" &&
-                callee.object.type === "Identifier" &&
-                callee.object.name === "Schema" &&
-                callee.property.type === "Identifier" &&
-                callee.property.name === "NullOr") {
-                context.report({ messageId: "schema", node: callee });
+            if (!isSchemaCall(node, "Union")) {
+                return;
+            }
+            const [members, ...options] = node.arguments;
+            if (members?.type !== "ArrayExpression" || options.length > 0) {
+                return;
+            }
+            const tags = members.elements.map((member) => member !== null &&
+                isSchemaCall(member, "TaggedStruct") &&
+                member.type === "CallExpression" &&
+                member.arguments[0]?.type === "Literal" &&
+                typeof member.arguments[0].value === "string"
+                ? member.arguments[0].value
+                : undefined);
+            if (tags.length > 0 &&
+                tags.every((tag) => tag !== undefined) &&
+                new Set(tags).size === tags.length) {
+                context.report({ messageId: "union", node: node.callee });
             }
         },
     }),
@@ -99,6 +199,7 @@ const plugin = {
         "no-disable-comments": noDisableComments,
         "no-infinite-loops": noInfiniteLoops,
         "prefer-option": preferOption,
+        "prefer-tagged-union": preferTaggedUnion,
     },
 };
 export default plugin;

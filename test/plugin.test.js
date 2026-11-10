@@ -79,5 +79,81 @@ new RuleTester().run("prefer-option", plugin.rules["prefer-option"], {
       ),
       errors: [{ messageId: "schema" }],
     },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nconst Notice = Schema.Union([Schema.String, Schema.Null]);',
+      ),
+      errors: [{ messageId: "schema" }],
+    },
   ],
 });
+
+new RuleTester().run(
+  "prefer-tagged-union",
+  plugin.rules["prefer-tagged-union"],
+  {
+    valid: [
+      ts(
+        'import { Schema } from "effect";\nconst Holding = Schema.TaggedUnion({ Answered: { value: Schema.String }, Unanswered: {} });\nconst held = Holding.cases.Unanswered.make({});',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Answered = Schema.TaggedStruct("Answered", { value: Schema.String });\nconst held = Answered.make({ value: "yes" });',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Seen = Schema.Union([Schema.String, Schema.Number]);',
+      ),
+      ts("declare const held: object;\nconst { _tag } = Object(held);"),
+      ts(
+        "const tagOf = <E extends { readonly _tag: string }>(error: E) => error._tag;",
+      ),
+      ts(
+        'import { Schema } from "effect";\nclass A extends Schema.Class<A>("A")({ _tag: Schema.tag("A") }) {}',
+      ),
+      ts(
+        'import { Schema } from "effect";\ndeclare const X: Schema.Codec<unknown>;\nconst bad = Schema.decodeUnknownSync(X)({ _tag: "Bogus" });',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Length = Schema.Union([\n  Schema.TaggedStruct("Length", { question: Schema.String }),\n  Schema.TaggedStruct("Length", { term: Schema.Number }),\n]);',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Either = Schema.Union([Schema.TaggedStruct("A", {}), Schema.TaggedStruct("B", {})], { mode: "oneOf" });',
+      ),
+      ts('declare const held: unknown;\nconst named = { tag: "Answered" };'),
+      ts(
+        'import { Schema } from "effect";\nconst Old = Schema.Struct({ _tag: Schema.Literal("Old") });',
+      ),
+    ],
+    invalid: [
+      {
+        ...ts('const held = { _tag: "Answered", value: "yes" };'),
+        errors: [{ messageId: "value" }],
+      },
+      {
+        ...ts('const held = { "_tag": "Unanswered" };'),
+        errors: [{ messageId: "value" }],
+      },
+      {
+        ...ts(
+          'type Holding =\n  | { readonly _tag: "Answered"; readonly value: string }\n  | { readonly _tag: "Unanswered" };',
+        ),
+        errors: [{ messageId: "type" }, { messageId: "type" }],
+      },
+      {
+        ...ts('type Side = { readonly _tag: "Left" | "Right" };'),
+        errors: [{ messageId: "type" }],
+      },
+      {
+        ...ts(
+          'interface Answered { readonly _tag: "Answered" }\ntype Only = Extract<Answered, { _tag: "Answered" }>;',
+        ),
+        errors: [{ messageId: "type" }, { messageId: "type" }],
+      },
+      {
+        ...ts(
+          'import { Schema } from "effect";\nconst Holding = Schema.Union([\n  Schema.TaggedStruct("Answered", { value: Schema.String }),\n  Schema.TaggedStruct("Unanswered", {}),\n]);',
+        ),
+        errors: [{ messageId: "union" }],
+      },
+    ],
+  },
+);

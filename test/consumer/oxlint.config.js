@@ -8,5 +8,6 @@ export default {
     "stack/no-infinite-loops": stack.rules["stack/no-infinite-loops"],
     "no-constant-condition": stack.rules["no-constant-condition"],
     "stack/prefer-option": stack.rules["stack/prefer-option"],
+    "stack/prefer-tagged-union": stack.rules["stack/prefer-tagged-union"],
   },
 };

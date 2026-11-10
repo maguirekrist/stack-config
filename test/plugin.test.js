@@ -106,6 +106,18 @@ new RuleTester().run(
       ts(
         "const tagOf = <E extends { readonly _tag: string }>(error: E) => error._tag;",
       ),
+      ts(
+        'import { Schema } from "effect";\nclass A extends Schema.Class<A>("A")({ _tag: Schema.tag("A") }) {}',
+      ),
+      ts(
+        'import { Schema } from "effect";\ndeclare const X: Schema.Codec<unknown>;\nconst bad = Schema.decodeUnknownSync(X)({ _tag: "Bogus" });',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Length = Schema.Union([\n  Schema.TaggedStruct("Length", { question: Schema.String }),\n  Schema.TaggedStruct("Length", { term: Schema.Number }),\n]);',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Either = Schema.Union([Schema.TaggedStruct("A", {}), Schema.TaggedStruct("B", {})], { mode: "oneOf" });',
+      ),
       ts('declare const held: unknown;\nconst named = { tag: "Answered" };'),
       ts(
         'import { Schema } from "effect";\nconst Old = Schema.Struct({ _tag: Schema.Literal("Old") });',
@@ -125,6 +137,10 @@ new RuleTester().run(
           'type Holding =\n  | { readonly _tag: "Answered"; readonly value: string }\n  | { readonly _tag: "Unanswered" };',
         ),
         errors: [{ messageId: "type" }, { messageId: "type" }],
+      },
+      {
+        ...ts('type Side = { readonly _tag: "Left" | "Right" };'),
+        errors: [{ messageId: "type" }],
       },
       {
         ...ts(

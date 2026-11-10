@@ -103,6 +103,23 @@ const isSchemaCall = (node, name) => node.type === "CallExpression" &&
     node.callee.property.type === "Identifier" &&
     node.callee.property.name === name;
 /**
+ * Whether a callee is reached from `Schema`, as in `Schema.Struct`,
+ * `Schema.Class<A>("A")` or `Schema.decodeSync(X)`: its object arguments define
+ * a schema or are encoded input, not values.
+ */
+const rootsAtSchema = (callee) => {
+    if (callee.type === "Identifier") {
+        return callee.name === "Schema";
+    }
+    if (callee.type === "MemberExpression") {
+        return rootsAtSchema(callee.object);
+    }
+    if (callee.type === "CallExpression") {
+        return rootsAtSchema(callee.callee);
+    }
+    return false;
+};
+/**
  * Whether a `_tag` type names cases: a string literal, or a union of them. A
  * bound such as `{ readonly _tag: string }` asks only that a value has a tag.
  */
@@ -113,8 +130,8 @@ const namesCases = (type) => (type.type === "TSLiteralType" && type.literal.type
  * gets its constructors, guards and `match` from the schema. The rule reads
  * syntax, not types, so it reports every hand-written tag: an object literal
  * with a `_tag`, a type with a `_tag` member, and a `Schema.Union` of inline
- * `Schema.TaggedStruct`s. A `_tag` in a `Schema.Struct` is left to Effect's
- * `schema-struct-with-tag`.
+ * `Schema.TaggedStruct`s with distinct tags. An object handed to a `Schema`
+ * call defines a schema or is encoded input, so it is left alone.
  */
 const preferTaggedUnion = {
     meta: {
@@ -123,7 +140,7 @@ const preferTaggedUnion = {
             description: "A tagged union is a Schema.TaggedUnion, its values made with the schema's constructors and its types taken from the schema.",
         },
         messages: {
-            value: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, or Case.make({ ... }) for a Schema.TaggedStruct. A tagged error is a Schema.TaggedErrorClass, made with new.",
+            value: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, or Case.make({ ... }) for a Schema.TaggedStruct. A tagged error is a Schema.TaggedError class, made with new.",
             type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
             union: "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
         },
@@ -136,7 +153,10 @@ const preferTaggedUnion = {
             if (tag === undefined) {
                 return;
             }
-            if (isSchemaCall(node.parent, "Struct")) {
+            const { parent } = node;
+            if (parent.type === "CallExpression" &&
+                parent.arguments.includes(node) &&
+                rootsAtSchema(parent.callee)) {
                 return;
             }
             context.report({ messageId: "value", node: tag });
@@ -153,10 +173,20 @@ const preferTaggedUnion = {
             if (!isSchemaCall(node, "Union")) {
                 return;
             }
-            const [members] = node.arguments;
-            if (members?.type === "ArrayExpression" &&
-                members.elements.length > 0 &&
-                members.elements.every((member) => member !== null && isSchemaCall(member, "TaggedStruct"))) {
+            const [members, ...options] = node.arguments;
+            if (members?.type !== "ArrayExpression" || options.length > 0) {
+                return;
+            }
+            const tags = members.elements.map((member) => member !== null &&
+                isSchemaCall(member, "TaggedStruct") &&
+                member.type === "CallExpression" &&
+                member.arguments[0]?.type === "Literal" &&
+                typeof member.arguments[0].value === "string"
+                ? member.arguments[0].value
+                : undefined);
+            if (tags.length > 0 &&
+                tags.every((tag) => tag !== undefined) &&
+                new Set(tags).size === tags.length) {
                 context.report({ messageId: "union", node: node.callee });
             }
         },

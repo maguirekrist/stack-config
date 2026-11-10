@@ -81,3 +81,54 @@ new RuleTester().run("prefer-option", plugin.rules["prefer-option"], {
     },
   ],
 });
+
+new RuleTester().run(
+  "prefer-tagged-union",
+  plugin.rules["prefer-tagged-union"],
+  {
+    valid: [
+      ts(
+        'import { Schema } from "effect";\nconst Holding = Schema.TaggedUnion({ Answered: { value: Schema.String }, Unanswered: {} });\nconst held = Holding.cases.Unanswered.make({});',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Answered = Schema.TaggedStruct("Answered", { value: Schema.String });\nconst held = Answered.make({ value: "yes" });',
+      ),
+      ts(
+        'import { Schema } from "effect";\nconst Seen = Schema.Union([Schema.String, Schema.Number]);',
+      ),
+      ts("declare const held: object;\nconst { _tag } = Object(held);"),
+      ts('declare const held: unknown;\nconst named = { tag: "Answered" };'),
+      ts(
+        'import { Schema } from "effect";\nconst Old = Schema.Struct({ _tag: Schema.Literal("Old") });',
+      ),
+    ],
+    invalid: [
+      {
+        ...ts('const held = { _tag: "Answered", value: "yes" };'),
+        errors: [{ messageId: "value" }],
+      },
+      {
+        ...ts('const held = { "_tag": "Unanswered" };'),
+        errors: [{ messageId: "value" }],
+      },
+      {
+        ...ts(
+          'type Holding =\n  | { readonly _tag: "Answered"; readonly value: string }\n  | { readonly _tag: "Unanswered" };',
+        ),
+        errors: [{ messageId: "type" }, { messageId: "type" }],
+      },
+      {
+        ...ts(
+          'interface Answered { readonly _tag: "Answered" }\ntype Only = Extract<Answered, { _tag: "Answered" }>;',
+        ),
+        errors: [{ messageId: "type" }, { messageId: "type" }],
+      },
+      {
+        ...ts(
+          'import { Schema } from "effect";\nconst Holding = Schema.Union([\n  Schema.TaggedStruct("Answered", { value: Schema.String }),\n  Schema.TaggedStruct("Unanswered", {}),\n]);',
+        ),
+        errors: [{ messageId: "union" }],
+      },
+    ],
+  },
+);

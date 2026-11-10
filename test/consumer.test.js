@@ -35,3 +35,13 @@ test("a project's config fails on null in a value or a type", () => {
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(run.stdout, /stack\(prefer-option\)/u);
 });
+
+test("a project's config fails on a hand-written tagged union", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "tagged.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout, /stack\(prefer-tagged-union\)/u);
+});

@@ -9,7 +9,7 @@ The rules start from what the stack's authors run:
 - **Effect:** every rule Effect recommends (its `strict` preset), as errors, every rule of its `style` preset but `missing-pipeable-signature`, and its native-API rules inside Effect code, as Alchemy runs them. Effect is imported by name from its barrels, `import { Effect, Schema } from "effect"`.
 - **Oxlint:** its `correctness`, `suspicious` and `perf` groups, the type-safety TypeScript rules, and the TypeScript and unicorn rules Alchemy adds.
 - **Foldkit:** its recommended rules, in a project's Foldkit app folders only.
-- **Our own:** a few rules kept because they make the code clearer, including `stack/no-disable-comments` from this package's plugin.
+- **Our own:** a few rules kept because they make the code clearer, including `stack/no-disable-comments` from this package's plugin. `stack/prefer-tagged-union` makes every tagged union an Effect Schema: values come from `Union.cases.Case.make`, types from `typeof Union.Type`. A recursive union's hand-written types, and code that runs where Effect can't load, are path exceptions.
 
 [src/oxlint.ts](src/oxlint.ts) is the list, with each choice's reason beside it. A rule earns a place in it only by improving the code; a rule that mostly produces workarounds doesn't.
 
@@ -21,7 +21,7 @@ Install it from a tag, beside the tools it configures:
 {
   "scripts": { "prepare": "effect-tsgo patch --oxlint && husky" },
   "devDependencies": {
-    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.5.0",
+    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.6.0",
     "@effect/tsgo": "0.67.5",
     "@foldkit/oxlint-plugin": "0.15.4",
     "oxlint": "1.90.0",

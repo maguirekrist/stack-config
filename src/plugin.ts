@@ -1,4 +1,4 @@
-import type { Plugin, Rule } from "@oxlint/plugins";
+import type { ESTree, Plugin, Rule } from "@oxlint/plugins";
 
 /**
  * A comment that switches lint or Effect's diagnostics off: `eslint-disable`,
@@ -108,6 +108,82 @@ const preferOption: Rule = {
   }),
 };
 
+/** Whether a property key, plain or quoted, is `_tag`. */
+const isTagKey = (key: ESTree.PropertyKey): boolean =>
+  (key.type === "Identifier" && key.name === "_tag") ||
+  (key.type === "Literal" && key.value === "_tag");
+
+/** Whether a node is the call `Schema.<name>(...)`. */
+const isSchemaCall = (node: ESTree.Node, name: string): boolean =>
+  node.type === "CallExpression" &&
+  node.callee.type === "MemberExpression" &&
+  node.callee.object.type === "Identifier" &&
+  node.callee.object.name === "Schema" &&
+  node.callee.property.type === "Identifier" &&
+  node.callee.property.name === name;
+
+/**
+ * A tagged union is an Effect Schema, so each union is declared one way and
+ * gets its constructors, guards and `match` from the schema. The rule reads
+ * syntax, not types, so it reports every hand-written tag: an object literal
+ * with a `_tag`, a type with a `_tag` member, and a `Schema.Union` of inline
+ * `Schema.TaggedStruct`s. A `_tag` in a `Schema.Struct` is left to Effect's
+ * `schema-struct-with-tag`.
+ */
+const preferTaggedUnion: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "A tagged union is a Schema.TaggedUnion, its values made with the schema's constructors and its types taken from the schema.",
+    },
+    messages: {
+      value:
+        "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, or Case.make({ ... }) for a Schema.TaggedStruct. A tagged error is a Schema.TaggedErrorClass, made with new.",
+      type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
+      union:
+        "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
+    },
+  },
+  create: (context) => ({
+    ObjectExpression: (node) => {
+      const tag = node.properties.find(
+        (property) =>
+          property.type === "Property" &&
+          !property.computed &&
+          isTagKey(property.key),
+      );
+      if (tag === undefined) {
+        return;
+      }
+      if (isSchemaCall(node.parent, "Struct")) {
+        return;
+      }
+      context.report({ messageId: "value", node: tag });
+    },
+    TSPropertySignature: (node) => {
+      if (!node.computed && isTagKey(node.key)) {
+        context.report({ messageId: "type", node });
+      }
+    },
+    CallExpression: (node) => {
+      if (!isSchemaCall(node, "Union")) {
+        return;
+      }
+      const [members] = node.arguments;
+      if (
+        members?.type === "ArrayExpression" &&
+        members.elements.length > 0 &&
+        members.elements.every(
+          (member) => member !== null && isSchemaCall(member, "TaggedStruct"),
+        )
+      ) {
+        context.report({ messageId: "union", node: node.callee });
+      }
+    },
+  }),
+};
+
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin: Plugin = {
   meta: { name: "stack" },
@@ -115,6 +191,7 @@ const plugin: Plugin = {
     "no-disable-comments": noDisableComments,
     "no-infinite-loops": noInfiniteLoops,
     "prefer-option": preferOption,
+    "prefer-tagged-union": preferTaggedUnion,
   },
 };
 

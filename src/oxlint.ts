@@ -129,6 +129,9 @@ export const rules: Rules = {
   "no-constant-condition": ["error", { checkLoops: "all" }],
   // Absence is an Option, and null stays on the wire.
   "stack/prefer-option": "error",
+  // A tagged union is a Schema.TaggedUnion: one way to declare it, and its
+  // constructors, guards and match come from the schema.
+  "stack/prefer-tagged-union": "error",
 
   // Plain JavaScript hygiene.
   "no-underscore-dangle": ["error", { allow: ["_tag"] }],

@@ -263,7 +263,7 @@ const page = (code) => ({
   filename: fileURLToPath(new URL("consumer/page/Changes.ts", import.meta.url)),
 });
 const pageImports =
-  'import type { Element, UserId } from "@app/domain";\nimport type { Field, Listing, Model, Row, UpdateReturn } from "./Model.ts";\n';
+  'import type { Element, UserId } from "@app/domain";\nimport type { Entry, Field, Listing, Model, Row, UpdateReturn } from "./Model.ts";\n';
 const companion = (name) => [
   {
     messageId: "companion",
@@ -386,6 +386,12 @@ new RuleTester().run(
       {
         ...page(
           `${pageImports}export const listingOf = (model: Model): Listing => ({ rows: [model] });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...page(
+          `${pageImports}export const entryOf = (element: Element): Entry => ({\n  label: element.label,\n});`,
         ),
         errors: mapper,
       },

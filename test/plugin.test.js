@@ -1,4 +1,5 @@
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { RuleTester } from "oxlint/plugins-dev";
 import plugin from "@maguirekrist/stack-config/plugin";
 
@@ -253,6 +254,16 @@ const imports =
 const declared = "interface MachineRequest {\n  readonly attempt: number;\n}\n";
 const declares = `import type { EpochMillis } from "@umbra/client";\nimport { SessionEvent } from "./SessionLifecycle.ts";\n${declared}`;
 const declaresTypes = `import type { SessionEvent } from "./SessionLifecycle.ts";\n${declared}`;
+const foldkitPage =
+  'import { Schema } from "effect";\nimport type { Update } from "foldkit";\nimport type { Document, HtmlBuilder } from "foldkit/html";\nimport type { Message } from "./Message.ts";\nexport const Model = Schema.Struct({ title: Schema.String, isOpen: Schema.Boolean });\nexport type Model = typeof Model.Type;\n';
+// A Foldkit page's update helpers import its Model and its UpdateReturn alias
+// from the sibling Model.ts, which the rule reads to see what the alias names.
+const page = (code) => ({
+  code,
+  filename: fileURLToPath(new URL("consumer/page/Changes.ts", import.meta.url)),
+});
+const pageImports =
+  'import type { Element, UserId } from "@app/domain";\nimport type { Field, Listing, Model, Row, UpdateReturn } from "./Model.ts";\n';
 const companion = (name) => [
   {
     messageId: "companion",
@@ -304,6 +315,18 @@ new RuleTester().run(
       ts(
         `${imports}export const failed = (at: EpochMillis, cause: unknown) =>\n  SessionEvent.cases.Failed.make({ at, detail: String(cause) });`,
       ),
+      ts(
+        `${foldkitPage}export const close = (model: Model): Update.Return<Model, Message> => ({\n  model: { ...model, isOpen: false },\n});`,
+      ),
+      ts(
+        `${foldkitPage}export const view = (model: Model, h: HtmlBuilder<Message>): Document => ({\n  title: model.title,\n  body: h.div([], []),\n});`,
+      ),
+      page(
+        `${pageImports}export const refuse = (model: Model, reason: string): UpdateReturn => ({\n  model: { ...model, notice: reason },\n});`,
+      ),
+      page(
+        `${pageImports}export const init = (recipient: UserId): UpdateReturn => ({\n  model: { notice: recipient },\n  commands: [],\n});`,
+      ),
     ],
     invalid: [
       {
@@ -345,6 +368,24 @@ new RuleTester().run(
       {
         ...ts(
           `${imports}export const requested = ({ at }: { readonly at: EpochMillis }) =>\n  SessionEvent.cases.Requested.make({ at });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...page(
+          `${pageImports}export const fieldOf = (element: Element): Field => ({\n  label: element.label,\n});`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...page(
+          `${pageImports}export const rowOf = (model: Model): Row => ({ label: model.notice });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...page(
+          `${pageImports}export const listingOf = (model: Model): Listing => ({ rows: [model] });`,
         ),
         errors: mapper,
       },

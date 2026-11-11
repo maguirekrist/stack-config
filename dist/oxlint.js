@@ -110,6 +110,14 @@ export const rules = {
     // A tagged union is a Schema.TaggedUnion: one way to declare it, and its
     // constructors, guards and match come from the schema.
     "stack/prefer-tagged-union": "error",
+    // A tagged value comes from its schema's constructor, which checks its tag
+    // and fields where the type is declared.
+    "stack/no-tagged-literal": "error",
+    // A type named after a schema is its Type, so the two never drift apart.
+    "stack/type-from-schema": "error",
+    // A function that maps one type into another lives with one of them, so a
+    // type's constructors are found where the type is.
+    "stack/mapper-with-its-type": "error",
     // Plain JavaScript hygiene.
     "no-underscore-dangle": ["error", { allow: ["_tag"] }],
     "import/no-unassigned-import": ["error", { allow: ["**/*.css"] }],

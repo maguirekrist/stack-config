@@ -88,6 +88,56 @@ new RuleTester().run("prefer-option", plugin.rules["prefer-option"], {
   ],
 });
 
+const literal = [{ messageId: "literal" }];
+
+new RuleTester().run("no-tagged-literal", plugin.rules["no-tagged-literal"], {
+  valid: [
+    ts(
+      'import { Schema } from "effect";\nconst Holding = Schema.TaggedUnion({ Answered: { value: Schema.String }, Unanswered: {} });\nconst held = Holding.cases.Unanswered.make({});',
+    ),
+    ts(
+      'import { Schema } from "effect";\nconst Answered = Schema.TaggedStruct("Answered", { value: Schema.String });\nconst held = Answered.make({ value: "yes" });',
+    ),
+    ts("declare const held: object;\nconst { _tag } = Object(held);"),
+    ts(
+      'import { Schema } from "effect";\nclass A extends Schema.Class<A>("A")({ _tag: Schema.tag("A") }) {}',
+    ),
+    ts(
+      'import { Schema } from "effect";\ndeclare const X: Schema.Codec<unknown>;\nconst bad = Schema.decodeUnknownSync(X)({ _tag: "Bogus" });',
+    ),
+    ts(
+      'import { Schema } from "effect";\nconst Old = Schema.Struct({ _tag: Schema.Literal("Old") });',
+    ),
+    ts('declare const held: unknown;\nconst named = { tag: "Answered" };'),
+    ts(
+      'declare const reason: "Timeout" | "Gone";\nconst refused = { _tag: reason };',
+    ),
+  ],
+  invalid: [
+    {
+      ...ts('const held = { _tag: "Answered", value: "yes" };'),
+      errors: literal,
+    },
+    { ...ts('const held = { "_tag": "Unanswered" };'), errors: literal },
+    {
+      ...ts('const passed = { _tag: "Passed" as const };'),
+      errors: literal,
+    },
+    {
+      ...ts(
+        'import type { SessionEvent } from "./SessionLifecycle.ts";\nconst requested = (at: number): SessionEvent => ({ _tag: "MachineRequested", at });',
+      ),
+      errors: literal,
+    },
+    {
+      ...ts(
+        'import { Finished } from "./Finished.ts";\nconst done = Finished.make({ outcome: { _tag: "Uncertain" } });',
+      ),
+      errors: literal,
+    },
+  ],
+});
+
 new RuleTester().run(
   "prefer-tagged-union",
   plugin.rules["prefer-tagged-union"],
@@ -97,20 +147,10 @@ new RuleTester().run(
         'import { Schema } from "effect";\nconst Holding = Schema.TaggedUnion({ Answered: { value: Schema.String }, Unanswered: {} });\nconst held = Holding.cases.Unanswered.make({});',
       ),
       ts(
-        'import { Schema } from "effect";\nconst Answered = Schema.TaggedStruct("Answered", { value: Schema.String });\nconst held = Answered.make({ value: "yes" });',
-      ),
-      ts(
         'import { Schema } from "effect";\nconst Seen = Schema.Union([Schema.String, Schema.Number]);',
       ),
-      ts("declare const held: object;\nconst { _tag } = Object(held);"),
       ts(
         "const tagOf = <E extends { readonly _tag: string }>(error: E) => error._tag;",
-      ),
-      ts(
-        'import { Schema } from "effect";\nclass A extends Schema.Class<A>("A")({ _tag: Schema.tag("A") }) {}',
-      ),
-      ts(
-        'import { Schema } from "effect";\ndeclare const X: Schema.Codec<unknown>;\nconst bad = Schema.decodeUnknownSync(X)({ _tag: "Bogus" });',
       ),
       ts(
         'import { Schema } from "effect";\nconst Length = Schema.Union([\n  Schema.TaggedStruct("Length", { question: Schema.String }),\n  Schema.TaggedStruct("Length", { term: Schema.Number }),\n]);',
@@ -118,20 +158,9 @@ new RuleTester().run(
       ts(
         'import { Schema } from "effect";\nconst Either = Schema.Union([Schema.TaggedStruct("A", {}), Schema.TaggedStruct("B", {})], { mode: "oneOf" });',
       ),
-      ts('declare const held: unknown;\nconst named = { tag: "Answered" };'),
-      ts(
-        'import { Schema } from "effect";\nconst Old = Schema.Struct({ _tag: Schema.Literal("Old") });',
-      ),
+      ts('const held = { _tag: "Answered", value: "yes" };'),
     ],
     invalid: [
-      {
-        ...ts('const held = { _tag: "Answered", value: "yes" };'),
-        errors: [{ messageId: "value" }],
-      },
-      {
-        ...ts('const held = { "_tag": "Unanswered" };'),
-        errors: [{ messageId: "value" }],
-      },
       {
         ...ts(
           'type Holding =\n  | { readonly _tag: "Answered"; readonly value: string }\n  | { readonly _tag: "Unanswered" };',
@@ -153,6 +182,138 @@ new RuleTester().run(
           'import { Schema } from "effect";\nconst Holding = Schema.Union([\n  Schema.TaggedStruct("Answered", { value: Schema.String }),\n  Schema.TaggedStruct("Unanswered", {}),\n]);',
         ),
         errors: [{ messageId: "union" }],
+      },
+    ],
+  },
+);
+
+const drift = [{ messageId: "drift" }];
+
+new RuleTester().run("type-from-schema", plugin.rules["type-from-schema"], {
+  valid: [
+    ts(
+      'import { Schema } from "effect";\nexport const Book = Schema.Struct({ title: Schema.String });\nexport type Book = typeof Book.Type;',
+    ),
+    ts(
+      'import { Schema } from "effect";\nexport const Id = Schema.String.pipe(Schema.brand("Id"));\nexport type Id = typeof Id.Type;',
+    ),
+    ts(
+      'import { Schema } from "effect";\nconst LocatorFields = { nth: Schema.optionalKey(Schema.Int) };\nexport interface Locator extends Schema.Struct.Type<typeof LocatorFields> {\n  readonly within?: Locator;\n}\nexport const Locator = Schema.Struct({\n  ...LocatorFields,\n  within: Schema.optionalKey(Schema.suspend((): Schema.Codec<Locator> => Locator)),\n});',
+    ),
+    ts(
+      'import { Data } from "effect";\nexport type Endpoint = Data.TaggedEnum<{ Cdp: { readonly url: string } }>;\nexport const Endpoint = Data.taggedEnum<Endpoint>();',
+    ),
+    ts(
+      "export interface Point { readonly left: number; readonly top: number }",
+    ),
+  ],
+  invalid: [
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport interface Book { readonly title: string }\nexport const Book = Schema.Struct({ title: Schema.String });',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport type Book = { readonly title: string };\nexport const Book = Schema.Struct({ title: Schema.String });',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport const Protocol = Schema.Literals(["Cdp", "Bidi"]);\nexport type Protocol = "Cdp" | "Bidi";',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport const Book = Schema.Struct({ title: Schema.String });\nexport type Book = typeof Book.Encoded;',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nexport interface Locator {\n  readonly within?: Locator;\n  readonly nth?: number;\n}\nexport const Locator = Schema.Struct({\n  nth: Schema.optionalKey(Schema.Int),\n  within: Schema.optionalKey(Schema.suspend((): Schema.Codec<Locator> => Locator)),\n});',
+      ),
+      errors: drift,
+    },
+    {
+      ...ts(
+        'import { Schema } from "effect";\nconst Other = { nth: Schema.optionalKey(Schema.Int) };\nexport interface Locator extends Schema.Struct.Type<typeof Other> {\n  readonly within?: Locator;\n}\nexport const Locator = Schema.Struct({ ...Other });',
+      ),
+      errors: drift,
+    },
+  ],
+});
+
+const mapper = [{ messageId: "mapper" }];
+const imports =
+  'import type { EpochMillis, Point } from "@umbra/client";\nimport { SessionEvent } from "./SessionLifecycle.ts";\nimport type { MachineRequest } from "./MachineRequest.ts";\n';
+
+new RuleTester().run(
+  "mapper-with-its-type",
+  plugin.rules["mapper-with-its-type"],
+  {
+    valid: [
+      ts(
+        `${imports}export const requested = (attempt: number, at: number) =>\n  SessionEvent.cases.MachineRequested.make({ at, attempt });`,
+      ),
+      ts(
+        `${imports}export const handle = (at: EpochMillis) =>\n  Effect.sync(() => SessionEvent.cases.Requested.make({ at }));`,
+      ),
+      ts(
+        `${imports}export const handle = (at: EpochMillis) => {\n  const event = () => SessionEvent.cases.Requested.make({ at });\n  return event;\n};`,
+      ),
+      ts(
+        `${imports}export const make = Effect.gen(function* () {\n  const record = (at: EpochMillis) => SessionEvent.cases.Requested.make({ at });\n  return { record };\n});`,
+      ),
+      ts(
+        `${imports}import { Ref } from "effect";\nexport const counter = (at: EpochMillis) => Ref.make(at);`,
+      ),
+      ts(
+        `${imports}export const describe = (at: EpochMillis): string => String(at);`,
+      ),
+      ts(
+        `${imports}export interface Started { readonly at: EpochMillis }\nexport const started = (at: EpochMillis): Started => ({ at });`,
+      ),
+      ts(
+        `${imports}interface Request { readonly attempt: number }\nconst machineRequested = (\n  request: Request,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
+      ),
+      ts(
+        `${imports}const whole = ({ left, top }: Point): Point => ({\n  left: Math.round(left),\n  top: Math.round(top),\n});`,
+      ),
+      ts(
+        `${imports}import type { Socket } from "./Socket.ts";\nconst adapt = (socket: Socket, at: EpochMillis): SessionEvent => ({\n  at,\n  send: (frame: string) => socket.send(frame),\n});`,
+      ),
+      ts(
+        `${imports}export const failed = (at: EpochMillis, cause: unknown) =>\n  SessionEvent.cases.Failed.make({ at, detail: String(cause) });`,
+      ),
+    ],
+    invalid: [
+      {
+        ...ts(
+          `${imports}const machineRequested = (\n  request: MachineRequest,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...ts(
+          `${imports}export const requested = (at: EpochMillis) =>\n  SessionEvent.cases.Requested.make({ at });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...ts(
+          `${imports}export function requested(at: EpochMillis): SessionEvent {\n  if (at > 0) {\n    return SessionEvent.cases.Requested.make({ at });\n  }\n  return SessionEvent.cases.Ended.make({ at });\n}`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...ts(
+          `${imports}export const requested = ({ at }: { readonly at: EpochMillis }) =>\n  SessionEvent.cases.Requested.make({ at });`,
+        ),
+        errors: mapper,
       },
     ],
   },

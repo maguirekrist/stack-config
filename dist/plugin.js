@@ -125,31 +125,32 @@ const rootsAtSchema = (callee) => {
  */
 const namesCases = (type) => (type.type === "TSLiteralType" && type.literal.type === "Literal") ||
     (type.type === "TSUnionType" && type.types.every(namesCases));
+/** Whether a value is a string literal, `"Tag"` or `"Tag" as const`. */
+const isString = (node) => node.type === "TSAsExpression" || node.type === "TSSatisfiesExpression"
+    ? isString(node.expression)
+    : node.type === "Literal" && typeof node.value === "string";
 /**
- * A tagged union is an Effect Schema, so each union is declared one way and
- * gets its constructors, guards and `match` from the schema. The rule reads
- * syntax, not types, so it reports every hand-written tag: an object literal
- * with a `_tag`, a type with a `_tag` member, and a `Schema.Union` of inline
- * `Schema.TaggedStruct`s with distinct tags. An object handed to a `Schema`
+ * A tagged value is made by its type's own constructor, so its tag and fields
+ * are checked where the type is declared. The rule reads syntax, so it reports
+ * an object literal whose `_tag` is a string. An object handed to a `Schema`
  * call defines a schema or is encoded input, so it is left alone.
  */
-const preferTaggedUnion = {
+const noTaggedLiteral = {
     meta: {
         type: "suggestion",
         docs: {
-            description: "A tagged union is a Schema.TaggedUnion, its values made with the schema's constructors and its types taken from the schema.",
+            description: "A tagged value is made with its schema's constructor, never written as a { _tag } object.",
         },
         messages: {
-            value: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, or Case.make({ ... }) for a Schema.TaggedStruct. A tagged error is a Schema.TaggedError class, made with new.",
-            type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
-            union: "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
+            literal: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, X.make({ ... }) for a Schema.TaggedStruct or a Schema.Class, and new for a Schema.TaggedError. If its type isn't a schema, declare it as one, or as a Data.TaggedEnum, whose constructors make its values.",
         },
     },
     create: (context) => ({
         ObjectExpression: (node) => {
             const tag = node.properties.find((property) => property.type === "Property" &&
                 !property.computed &&
-                isTagKey(property.key));
+                isTagKey(property.key) &&
+                isString(property.value));
             if (tag === undefined) {
                 return;
             }
@@ -159,8 +160,29 @@ const preferTaggedUnion = {
                 rootsAtSchema(parent.callee)) {
                 return;
             }
-            context.report({ messageId: "value", node: tag });
+            context.report({ messageId: "literal", node: tag });
         },
+    }),
+};
+/**
+ * A tagged union is an Effect Schema, so each union is declared one way and
+ * gets its constructors, guards and `match` from the schema. The rule reads
+ * syntax, not types, so it reports every hand-written tagged type: a type with
+ * a `_tag` member, and a `Schema.Union` of inline `Schema.TaggedStruct`s with
+ * distinct tags. `stack/no-tagged-literal` reports the values.
+ */
+const preferTaggedUnion = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "A tagged union is a Schema.TaggedUnion, its types taken from the schema.",
+        },
+        messages: {
+            type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
+            union: "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
+        },
+    },
+    create: (context) => ({
         TSPropertySignature: (node) => {
             if (!node.computed &&
                 isTagKey(node.key) &&
@@ -192,14 +214,297 @@ const preferTaggedUnion = {
         },
     }),
 };
+/** Whether a type is `typeof <name>.Type`. */
+const isTypeOf = (type, name) => type.type === "TSTypeQuery" &&
+    type.exprName.type === "TSQualifiedName" &&
+    type.exprName.left.type === "Identifier" &&
+    type.exprName.left.name === name &&
+    type.exprName.right.name === "Type";
+/** Whether an expression is `Schema.Struct.Type`. */
+const isStructType = (node) => node.type === "MemberExpression" &&
+    node.property.type === "Identifier" &&
+    node.property.name === "Type" &&
+    node.object.type === "MemberExpression" &&
+    node.object.property.type === "Identifier" &&
+    node.object.property.name === "Struct" &&
+    node.object.object.type === "Identifier" &&
+    node.object.object.name === "Schema";
+/** Whether an interface extends `Schema.Struct.Type<typeof <name>Fields>`. */
+const extendsItsFields = (node, name) => node.extends.some(({ expression, typeArguments }) => {
+    const [fields] = typeArguments?.params ?? [];
+    return (isStructType(expression) &&
+        fields !== undefined &&
+        fields.type === "TSTypeQuery" &&
+        fields.exprName.type === "Identifier" &&
+        fields.exprName.name === `${name}Fields`);
+});
+/** A module's top-level statement, with an `export` taken off. */
+const declared = (statement) => statement.type === "ExportNamedDeclaration"
+    ? (statement.declaration ?? undefined)
+    : statement;
+/**
+ * A type named after a schema is the schema's own `Type`, so the two can't
+ * drift apart. A schema that refers to itself needs a written type to break
+ * the cycle: its other fields are declared once, as `<Name>Fields`, and its
+ * interface extends `Schema.Struct.Type<typeof <Name>Fields>` with only the
+ * field that refers back. The rule reads syntax, so a schema is a top-level
+ * `const` reached from `Schema`.
+ */
+const typeFromSchema = {
+    meta: {
+        type: "problem",
+        docs: {
+            description: "A type named after a schema is `typeof X.Type`, or, for a schema that refers to itself, an interface extending `Schema.Struct.Type<typeof XFields>`.",
+        },
+        messages: {
+            drift: "Write `type {{name}} = typeof {{name}}.Type`, so the type and the schema can't drift apart. If {{name}} refers to itself, declare its other fields once as `{{name}}Fields`, spread them into the schema, and write `interface {{name}} extends Schema.Struct.Type<typeof {{name}}Fields>` with only the field that refers back.",
+        },
+    },
+    create: (context) => ({
+        Program: (program) => {
+            const statements = program.body.flatMap((statement) => {
+                const node = declared(statement);
+                return node === undefined ? [] : [node];
+            });
+            const schemas = new Set(statements.flatMap((node) => node.type === "VariableDeclaration"
+                ? node.declarations.flatMap(({ id, init }) => id.type === "Identifier" &&
+                    init !== null &&
+                    init !== undefined &&
+                    rootsAtSchema(init)
+                    ? [id.name]
+                    : [])
+                : []));
+            for (const node of statements) {
+                if (node.type === "TSTypeAliasDeclaration") {
+                    const { name } = node.id;
+                    if (schemas.has(name) && !isTypeOf(node.typeAnnotation, name)) {
+                        context.report({
+                            messageId: "drift",
+                            node: node.id,
+                            data: { name },
+                        });
+                    }
+                }
+                if (node.type === "TSInterfaceDeclaration") {
+                    const { name } = node.id;
+                    if (schemas.has(name) && !extendsItsFields(node, name)) {
+                        context.report({
+                            messageId: "drift",
+                            node: node.id,
+                            data: { name },
+                        });
+                    }
+                }
+            }
+        },
+    }),
+};
+const moduleNames = (program) => ({
+    imports: new Map(program.body.flatMap((statement) => statement.type === "ImportDeclaration"
+        ? statement.specifiers.map(({ local }) => [
+            local.name,
+            statement.source.value,
+        ])
+        : [])),
+    types: new Set(program.body.flatMap((statement) => {
+        const node = declared(statement);
+        return node !== undefined &&
+            (node.type === "TSTypeAliasDeclaration" ||
+                node.type === "TSInterfaceDeclaration" ||
+                node.type === "TSEnumDeclaration" ||
+                node.type === "ClassDeclaration") &&
+            node.id !== null
+            ? [node.id.name]
+            : [];
+    })),
+});
+/** Effect's own constructors, such as `Ref.make`, make no domain value. */
+const isEffect = (source) => source === "effect" ||
+    source.startsWith("effect/") ||
+    source.startsWith("@effect/");
+/** The name a type or value is reached through: `Event` in `Event.cases.Requested`. */
+const rootName = (node) => {
+    if (node.type === "Identifier") {
+        return node.name;
+    }
+    if (node.type === "TSQualifiedName") {
+        return rootName(node.left);
+    }
+    if (node.type === "MemberExpression") {
+        return rootName(node.object);
+    }
+    return undefined;
+};
+/** The names a type annotation refers to, inside unions, arrays, object types and type arguments too. */
+const typeNames = (type) => {
+    switch (type.type) {
+        case "TSTypeReference": {
+            const name = rootName(type.typeName);
+            return [
+                ...(name === undefined ? [] : [name]),
+                ...(type.typeArguments?.params ?? []).flatMap(typeNames),
+            ];
+        }
+        case "TSUnionType":
+        case "TSIntersectionType":
+            return type.types.flatMap(typeNames);
+        case "TSArrayType":
+            return typeNames(type.elementType);
+        case "TSTypeOperator":
+            return typeNames(type.typeAnnotation);
+        case "TSTypeLiteral":
+            return type.members.flatMap((member) => member.type === "TSPropertySignature" && member.typeAnnotation !== null
+                ? typeNames(member.typeAnnotation.typeAnnotation)
+                : []);
+        default:
+            return [];
+    }
+};
+const annotationOf = (param) => {
+    if (param.type === "AssignmentPattern") {
+        return annotationOf(param.left);
+    }
+    if (param.type === "TSParameterProperty") {
+        return undefined;
+    }
+    return param.typeAnnotation?.typeAnnotation;
+};
+/**
+ * Whether an object literal is a value, not an implementation: an object with
+ * a function in it, such as a service or an adapter, has no constructor.
+ */
+const isData = (node) => node.properties.every((property) => property.type === "SpreadElement" ||
+    (!property.method &&
+        property.value.type !== "ArrowFunctionExpression" &&
+        property.value.type !== "FunctionExpression"));
+const topLevelName = (fn) => {
+    const atTop = (node) => node?.type === "Program" ||
+        ((node?.type === "ExportNamedDeclaration" ||
+            node?.type === "ExportDefaultDeclaration") &&
+            node.parent.type === "Program");
+    if (fn.type === "FunctionDeclaration") {
+        return atTop(fn.parent) ? (fn.id ?? undefined) : undefined;
+    }
+    const { parent } = fn;
+    return parent.type === "VariableDeclarator" &&
+        parent.init === fn &&
+        parent.id.type === "Identifier" &&
+        atTop(parent.parent.parent)
+        ? parent.id
+        : undefined;
+};
+const returnsFrom = (node) => {
+    const { parent } = node;
+    if (parent === null) {
+        return undefined;
+    }
+    if (parent.type === "ArrowFunctionExpression" ||
+        parent.type === "FunctionExpression" ||
+        parent.type === "FunctionDeclaration") {
+        return parent;
+    }
+    return returnsFrom(parent);
+};
+/**
+ * A function that maps one type into another lives with one of them, as part
+ * of that type's companion module, so a type's constructors are found where the
+ * type is. The rule reads syntax, so a mapper is a top-level function that
+ * takes a parameter of an imported type and returns a value of another
+ * imported type: a `.make(...)` on an imported binding, or an object literal
+ * of data whose return type is imported. It lives with neither type when no
+ * parameter's type is declared in its module. Construction inside a handler is
+ * not a mapper, Effect's own constructors make no domain value, an object with
+ * functions in it is an implementation, and a function that takes `unknown`
+ * parses what a boundary hands over, so it lives at that boundary.
+ */
+const mapperWithItsType = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "A function that maps one type into another lives in the module of one of them, as part of that type's companion.",
+        },
+        messages: {
+            mapper: "{{name}} maps one type into another but lives with neither. Move it next to its source type or its target type, as part of that type's companion module, the way a schema's constructors live with the schema.",
+        },
+    },
+    create: (context) => {
+        const { imports, types } = moduleNames(context.sourceCode.ast);
+        const domain = (name) => {
+            const source = name === undefined ? undefined : imports.get(name);
+            return source !== undefined && !isEffect(source);
+        };
+        const built = (fn, value) => {
+            if (value.type === "ParenthesizedExpression") {
+                return built(fn, value.expression);
+            }
+            if (value.type === "CallExpression" &&
+                value.callee.type === "MemberExpression" &&
+                !value.callee.computed &&
+                value.callee.property.type === "Identifier" &&
+                value.callee.property.name === "make") {
+                const name = rootName(value.callee.object);
+                return domain(name) ? name : undefined;
+            }
+            const returned = fn.returnType?.typeAnnotation;
+            if (value.type === "ObjectExpression" &&
+                isData(value) &&
+                returned?.type === "TSTypeReference") {
+                const name = rootName(returned.typeName);
+                return domain(name) ? name : undefined;
+            }
+            return undefined;
+        };
+        const reported = new Set();
+        const check = (fn, value) => {
+            const name = topLevelName(fn);
+            const target = built(fn, value);
+            const annotations = fn.params.flatMap((param) => {
+                const annotation = annotationOf(param);
+                return annotation === undefined ? [] : [annotation];
+            });
+            const sources = annotations.flatMap(typeNames);
+            if (name === undefined ||
+                target === undefined ||
+                reported.has(fn) ||
+                !sources.some((source) => imports.has(source)) ||
+                annotations.some(({ type }) => type === "TSUnknownKeyword") ||
+                sources.some((source) => types.has(source)) ||
+                sources.includes(target)) {
+                return;
+            }
+            reported.add(fn);
+            context.report({
+                messageId: "mapper",
+                node: name,
+                data: { name: name.name },
+            });
+        };
+        return {
+            ArrowFunctionExpression: (fn) => {
+                if (fn.body.type !== "BlockStatement") {
+                    check(fn, fn.body);
+                }
+            },
+            ReturnStatement: (node) => {
+                const fn = returnsFrom(node);
+                if (fn !== undefined && node.argument !== null) {
+                    check(fn, node.argument);
+                }
+            },
+        };
+    },
+};
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin = {
     meta: { name: "stack" },
     rules: {
+        "mapper-with-its-type": mapperWithItsType,
         "no-disable-comments": noDisableComments,
         "no-infinite-loops": noInfiniteLoops,
+        "no-tagged-literal": noTaggedLiteral,
         "prefer-option": preferOption,
         "prefer-tagged-union": preferTaggedUnion,
+        "type-from-schema": typeFromSchema,
     },
 };
 export default plugin;

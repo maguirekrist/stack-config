@@ -36,7 +36,7 @@ test("a project's config fails on null in a value or a type", () => {
   assert.match(run.stdout, /stack\(prefer-option\)/u);
 });
 
-test("a project's config fails on a hand-written tagged union", () => {
+test("a project's config fails on a hand-written tagged union and its hand-built value", () => {
   const run = spawnSync(
     "pnpm",
     ["exec", "oxlint", "-c", "oxlint.config.js", "tagged.ts"],
@@ -44,4 +44,25 @@ test("a project's config fails on a hand-written tagged union", () => {
   );
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(run.stdout, /stack\(prefer-tagged-union\)/u);
+  assert.match(run.stdout, /stack\(no-tagged-literal\)/u);
+});
+
+test("a project's config fails on a type written beside its schema", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "schema.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout, /stack\(type-from-schema\)/u);
+});
+
+test("a project's config fails on a function that maps types it lives with neither of", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "mapper.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout, /stack\(mapper-with-its-type\)/u);
 });

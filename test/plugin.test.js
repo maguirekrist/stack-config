@@ -250,6 +250,15 @@ new RuleTester().run("type-from-schema", plugin.rules["type-from-schema"], {
 const mapper = [{ messageId: "mapper" }];
 const imports =
   'import type { EpochMillis, Point } from "@umbra/client";\nimport { SessionEvent } from "./SessionLifecycle.ts";\nimport type { MachineRequest } from "./MachineRequest.ts";\n';
+const declared = "interface MachineRequest {\n  readonly attempt: number;\n}\n";
+const declares = `import type { EpochMillis } from "@umbra/client";\nimport { SessionEvent } from "./SessionLifecycle.ts";\n${declared}`;
+const declaresTypes = `import type { SessionEvent } from "./SessionLifecycle.ts";\n${declared}`;
+const companion = (name) => [
+  {
+    messageId: "companion",
+    data: { name, source: "MachineRequest", target: "SessionEvent" },
+  },
+];
 
 new RuleTester().run(
   "mapper-with-its-type",
@@ -278,7 +287,13 @@ new RuleTester().run(
         `${imports}export interface Started { readonly at: EpochMillis }\nexport const started = (at: EpochMillis): Started => ({ at });`,
       ),
       ts(
-        `${imports}interface Request { readonly attempt: number }\nconst machineRequested = (\n  request: Request,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
+        `${declares}export const MachineRequest = {\n  toRequested: (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt }),\n};`,
+      ),
+      ts(
+        `${declaresTypes}const SessionEvent = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
+      ),
+      ts(
+        `${declares}export namespace MachineRequest {\n  export const toRequested = (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n}`,
       ),
       ts(
         `${imports}const whole = ({ left, top }: Point): Point => ({\n  left: Math.round(left),\n  top: Math.round(top),\n});`,
@@ -291,6 +306,24 @@ new RuleTester().run(
       ),
     ],
     invalid: [
+      {
+        ...ts(
+          `${declares}const machineRequested = (\n  request: MachineRequest,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
+        ),
+        errors: companion("machineRequested"),
+      },
+      {
+        ...ts(
+          `${declaresTypes}const Events = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
+        ),
+        errors: companion("fromRequest"),
+      },
+      {
+        ...ts(
+          `${declares}export namespace Requests {\n  export function toRequested(request: MachineRequest, at: EpochMillis) {\n    return SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n  }\n}`,
+        ),
+        errors: companion("toRequested"),
+      },
       {
         ...ts(
           `${imports}const machineRequested = (\n  request: MachineRequest,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,

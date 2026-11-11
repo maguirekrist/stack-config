@@ -377,20 +377,46 @@ const isData = (node) => node.properties.every((property) => property.type === "
     (!property.method &&
         property.value.type !== "ArrowFunctionExpression" &&
         property.value.type !== "FunctionExpression"));
-const topLevelName = (fn) => {
-    const atTop = (node) => node?.type === "Program" ||
-        ((node?.type === "ExportNamedDeclaration" ||
-            node?.type === "ExportDefaultDeclaration") &&
-            node.parent.type === "Program");
+const atTop = (node) => node?.type === "Program" ||
+    ((node?.type === "ExportNamedDeclaration" ||
+        node?.type === "ExportDefaultDeclaration") &&
+        node.parent.type === "Program");
+/** The home of a declaration whose statement sits in `container`. */
+const declaredIn = (name, container) => {
+    if (atTop(container)) {
+        return { name, companion: undefined };
+    }
+    const block = container?.type === "ExportNamedDeclaration" ? container.parent : container;
+    const namespace = block?.type === "TSModuleBlock" ? block.parent : undefined;
+    return namespace?.type === "TSModuleDeclaration" &&
+        namespace.id.type === "Identifier" &&
+        atTop(namespace.parent)
+        ? { name, companion: namespace.id.name }
+        : undefined;
+};
+const homeOf = (fn) => {
     if (fn.type === "FunctionDeclaration") {
-        return atTop(fn.parent) ? (fn.id ?? undefined) : undefined;
+        return fn.id === null ? undefined : declaredIn(fn.id, fn.parent);
     }
     const { parent } = fn;
-    return parent.type === "VariableDeclarator" &&
+    if (parent.type === "VariableDeclarator" &&
         parent.init === fn &&
-        parent.id.type === "Identifier" &&
-        atTop(parent.parent.parent)
-        ? parent.id
+        parent.id.type === "Identifier") {
+        return declaredIn(parent.id, parent.parent.parent);
+    }
+    if (parent.type !== "Property" ||
+        parent.value !== fn ||
+        parent.computed ||
+        parent.key.type !== "Identifier") {
+        return undefined;
+    }
+    const object = parent.parent;
+    const binding = object.parent;
+    return binding?.type === "VariableDeclarator" &&
+        binding.init === object &&
+        binding.id.type === "Identifier" &&
+        atTop(binding.parent.parent)
+        ? { name: parent.key, companion: binding.id.name }
         : undefined;
 };
 const returnsFrom = (node) => {
@@ -407,15 +433,17 @@ const returnsFrom = (node) => {
 };
 /**
  * A function that maps one type into another lives with one of them, as part
- * of that type's companion module, so a type's constructors are found where the
- * type is. The rule reads syntax, so a mapper is a top-level function that
- * takes a parameter of an imported type and returns a value of another
- * imported type: a `.make(...)` on an imported binding, or an object literal
- * of data whose return type is imported. It lives with neither type when no
- * parameter's type is declared in its module. Construction inside a handler is
- * not a mapper, Effect's own constructors make no domain value, an object with
- * functions in it is an implementation, and a function that takes `unknown`
- * parses what a boundary hands over, so it lives at that boundary.
+ * of that type's companion, so a type's constructors are found where the type
+ * is. The rule reads syntax, so a mapper is a top-level function, or a member
+ * of a top-level object or namespace, that takes a parameter of a named type
+ * and returns a value of another, imported type: a `.make(...)` on an imported
+ * binding, or an object literal of data whose return type is imported. When
+ * its module declares a parameter's type, the mapper belongs in the companion
+ * bound to that type's name or the target's. When it declares none, a loose
+ * mapper that takes an imported type lives with neither. Construction inside a
+ * handler is not a mapper, Effect's own constructors make no domain value, an
+ * object with functions in it is an implementation, and a function that takes
+ * `unknown` parses what a boundary hands over, so it lives at that boundary.
  */
 const mapperWithItsType = {
     meta: {
@@ -425,6 +453,7 @@ const mapperWithItsType = {
         },
         messages: {
             mapper: "{{name}} maps one type into another but lives with neither. Move it next to its source type or its target type, as part of that type's companion module, the way a schema's constructors live with the schema.",
+            companion: "{{name}} maps {{source}} into {{target}} but isn't part of either's companion. Make it a member of `{{source}}`'s companion, the way a schema's constructors live with the schema.",
         },
     },
     create: (context) => {
@@ -456,28 +485,44 @@ const mapperWithItsType = {
         };
         const reported = new Set();
         const check = (fn, value) => {
-            const name = topLevelName(fn);
+            const home = homeOf(fn);
             const target = built(fn, value);
             const annotations = fn.params.flatMap((param) => {
                 const annotation = annotationOf(param);
                 return annotation === undefined ? [] : [annotation];
             });
             const sources = annotations.flatMap(typeNames);
-            if (name === undefined ||
+            if (home === undefined ||
                 target === undefined ||
                 reported.has(fn) ||
-                !sources.some((source) => imports.has(source)) ||
                 annotations.some(({ type }) => type === "TSUnknownKeyword") ||
-                sources.some((source) => types.has(source)) ||
                 sources.includes(target)) {
                 return;
             }
-            reported.add(fn);
-            context.report({
-                messageId: "mapper",
-                node: name,
-                data: { name: name.name },
-            });
+            const { name, companion } = home;
+            const declared = sources.filter((source) => types.has(source));
+            const [source] = declared;
+            if (source !== undefined) {
+                if (companion === undefined ||
+                    ![...declared, target].includes(companion)) {
+                    reported.add(fn);
+                    context.report({
+                        messageId: "companion",
+                        node: name,
+                        data: { name: name.name, source, target },
+                    });
+                }
+                return;
+            }
+            if (companion === undefined &&
+                sources.some((imported) => imports.has(imported))) {
+                reported.add(fn);
+                context.report({
+                    messageId: "mapper",
+                    node: name,
+                    data: { name: name.name },
+                });
+            }
         };
         return {
             ArrowFunctionExpression: (fn) => {

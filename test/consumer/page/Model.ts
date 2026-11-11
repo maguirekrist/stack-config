@@ -1,3 +1,4 @@
+import type { Schema as EffectSchema } from "effect";
 import type { Update } from "foldkit";
 import type { Message } from "./Message.ts";
 import type { Page } from "./Page.ts";
@@ -18,3 +19,5 @@ export interface Row {
 export type UpdateReturn = Update.Return<Model, Message>;
 
 export type Listing = Page.Listing<Model>;
+
+export type Entry = EffectSchema.Schema.Type<typeof Field>;

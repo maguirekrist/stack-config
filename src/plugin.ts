@@ -403,13 +403,18 @@ const moduleNames = (program: ESTree.Program): ModuleNames => ({
  * constructors, such as `Ref.make`, and Foldkit's program results, an init's
  * or update's `Update.Return` and a view's `Document`.
  */
-const isFramework = (source: string): boolean =>
-  ["effect", "foldkit"].some(
-    (framework) =>
-      source === framework ||
-      source.startsWith(`${framework}/`) ||
-      source.startsWith(`@${framework}/`),
-  );
+const from =
+  (...frameworks: ReadonlyArray<string>) =>
+  (source: string): boolean =>
+    frameworks.some(
+      (framework) =>
+        source === framework ||
+        source.startsWith(`${framework}/`) ||
+        source.startsWith(`@${framework}/`),
+    );
+
+const isFramework = from("effect", "foldkit");
+const isFoldkit = from("foldkit");
 
 const IMPORT = /\bimport\s+(?:type\s+)?([^;]*?)\s+from\s+["']([^"']+)["']/gu;
 const ALIAS = /\btype\s+([\w$]+)\s*(?:<[^=]*>)?=\s*([\w$]+)/gu;
@@ -423,15 +428,16 @@ const bound = (clause: string): ReadonlyArray<string> => {
 };
 
 /**
- * The aliases a module's text declares of a framework type, such as a Foldkit
+ * The aliases a module's text declares of a Foldkit type, such as a Foldkit
  * page's `type UpdateReturn = Update.Return<Model, Message>` in its Model.ts,
- * which the page's update helpers import.
+ * which the page's update helpers import. An alias of an Effect type, such as
+ * `Schema.Schema.Type<typeof Field>`, still names a domain value.
  */
 const frameworkAliases = (file: string): ReadonlySet<string> => {
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
   const frameworks = new Set(
     [...text.matchAll(IMPORT)].flatMap(([, clause = "", source = ""]) =>
-      isFramework(source) ? bound(clause) : [],
+      isFoldkit(source) ? bound(clause) : [],
     ),
   );
   return new Set(

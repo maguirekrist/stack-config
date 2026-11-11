@@ -137,6 +137,9 @@ export const rules: Rules = {
   "stack/no-tagged-literal": "error",
   // A type named after a schema is its Type, so the two never drift apart.
   "stack/type-from-schema": "error",
+  // A function that maps one type into another lives with one of them, so a
+  // type's constructors are found where the type is.
+  "stack/mapper-with-its-type": "error",
 
   // Plain JavaScript hygiene.
   "no-underscore-dangle": ["error", { allow: ["_tag"] }],

@@ -246,3 +246,75 @@ new RuleTester().run("type-from-schema", plugin.rules["type-from-schema"], {
     },
   ],
 });
+
+const mapper = [{ messageId: "mapper" }];
+const imports =
+  'import type { EpochMillis, Point } from "@umbra/client";\nimport { SessionEvent } from "./SessionLifecycle.ts";\nimport type { MachineRequest } from "./MachineRequest.ts";\n';
+
+new RuleTester().run(
+  "mapper-with-its-type",
+  plugin.rules["mapper-with-its-type"],
+  {
+    valid: [
+      ts(
+        `${imports}export const requested = (attempt: number, at: number) =>\n  SessionEvent.cases.MachineRequested.make({ at, attempt });`,
+      ),
+      ts(
+        `${imports}export const handle = (at: EpochMillis) =>\n  Effect.sync(() => SessionEvent.cases.Requested.make({ at }));`,
+      ),
+      ts(
+        `${imports}export const handle = (at: EpochMillis) => {\n  const event = () => SessionEvent.cases.Requested.make({ at });\n  return event;\n};`,
+      ),
+      ts(
+        `${imports}export const make = Effect.gen(function* () {\n  const record = (at: EpochMillis) => SessionEvent.cases.Requested.make({ at });\n  return { record };\n});`,
+      ),
+      ts(
+        `${imports}import { Ref } from "effect";\nexport const counter = (at: EpochMillis) => Ref.make(at);`,
+      ),
+      ts(
+        `${imports}export const describe = (at: EpochMillis): string => String(at);`,
+      ),
+      ts(
+        `${imports}export interface Started { readonly at: EpochMillis }\nexport const started = (at: EpochMillis): Started => ({ at });`,
+      ),
+      ts(
+        `${imports}interface Request { readonly attempt: number }\nconst machineRequested = (\n  request: Request,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
+      ),
+      ts(
+        `${imports}const whole = ({ left, top }: Point): Point => ({\n  left: Math.round(left),\n  top: Math.round(top),\n});`,
+      ),
+      ts(
+        `${imports}import type { Socket } from "./Socket.ts";\nconst adapt = (socket: Socket, at: EpochMillis): SessionEvent => ({\n  at,\n  send: (frame: string) => socket.send(frame),\n});`,
+      ),
+      ts(
+        `${imports}export const failed = (at: EpochMillis, cause: unknown) =>\n  SessionEvent.cases.Failed.make({ at, detail: String(cause) });`,
+      ),
+    ],
+    invalid: [
+      {
+        ...ts(
+          `${imports}const machineRequested = (\n  request: MachineRequest,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...ts(
+          `${imports}export const requested = (at: EpochMillis) =>\n  SessionEvent.cases.Requested.make({ at });`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...ts(
+          `${imports}export function requested(at: EpochMillis): SessionEvent {\n  if (at > 0) {\n    return SessionEvent.cases.Requested.make({ at });\n  }\n  return SessionEvent.cases.Ended.make({ at });\n}`,
+        ),
+        errors: mapper,
+      },
+      {
+        ...ts(
+          `${imports}export const requested = ({ at }: { readonly at: EpochMillis }) =>\n  SessionEvent.cases.Requested.make({ at });`,
+        ),
+        errors: mapper,
+      },
+    ],
+  },
+);

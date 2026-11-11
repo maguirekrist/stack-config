@@ -56,3 +56,13 @@ test("a project's config fails on a type written beside its schema", () => {
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(run.stdout, /stack\(type-from-schema\)/u);
 });
+
+test("a project's config fails on a function that maps types it lives with neither of", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "mapper.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout, /stack\(mapper-with-its-type\)/u);
+});

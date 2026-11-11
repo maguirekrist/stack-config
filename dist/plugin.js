@@ -299,10 +299,206 @@ const typeFromSchema = {
         },
     }),
 };
+const moduleNames = (program) => ({
+    imports: new Map(program.body.flatMap((statement) => statement.type === "ImportDeclaration"
+        ? statement.specifiers.map(({ local }) => [
+            local.name,
+            statement.source.value,
+        ])
+        : [])),
+    types: new Set(program.body.flatMap((statement) => {
+        const node = declared(statement);
+        return node !== undefined &&
+            (node.type === "TSTypeAliasDeclaration" ||
+                node.type === "TSInterfaceDeclaration" ||
+                node.type === "TSEnumDeclaration" ||
+                node.type === "ClassDeclaration") &&
+            node.id !== null
+            ? [node.id.name]
+            : [];
+    })),
+});
+/** Effect's own constructors, such as `Ref.make`, make no domain value. */
+const isEffect = (source) => source === "effect" ||
+    source.startsWith("effect/") ||
+    source.startsWith("@effect/");
+/** The name a type or value is reached through: `Event` in `Event.cases.Requested`. */
+const rootName = (node) => {
+    if (node.type === "Identifier") {
+        return node.name;
+    }
+    if (node.type === "TSQualifiedName") {
+        return rootName(node.left);
+    }
+    if (node.type === "MemberExpression") {
+        return rootName(node.object);
+    }
+    return undefined;
+};
+/** The names a type annotation refers to, inside unions, arrays, object types and type arguments too. */
+const typeNames = (type) => {
+    switch (type.type) {
+        case "TSTypeReference": {
+            const name = rootName(type.typeName);
+            return [
+                ...(name === undefined ? [] : [name]),
+                ...(type.typeArguments?.params ?? []).flatMap(typeNames),
+            ];
+        }
+        case "TSUnionType":
+        case "TSIntersectionType":
+            return type.types.flatMap(typeNames);
+        case "TSArrayType":
+            return typeNames(type.elementType);
+        case "TSTypeOperator":
+            return typeNames(type.typeAnnotation);
+        case "TSTypeLiteral":
+            return type.members.flatMap((member) => member.type === "TSPropertySignature" && member.typeAnnotation !== null
+                ? typeNames(member.typeAnnotation.typeAnnotation)
+                : []);
+        default:
+            return [];
+    }
+};
+const annotationOf = (param) => {
+    if (param.type === "AssignmentPattern") {
+        return annotationOf(param.left);
+    }
+    if (param.type === "TSParameterProperty") {
+        return undefined;
+    }
+    return param.typeAnnotation?.typeAnnotation;
+};
+/**
+ * Whether an object literal is a value, not an implementation: an object with
+ * a function in it, such as a service or an adapter, has no constructor.
+ */
+const isData = (node) => node.properties.every((property) => property.type === "SpreadElement" ||
+    (!property.method &&
+        property.value.type !== "ArrowFunctionExpression" &&
+        property.value.type !== "FunctionExpression"));
+const topLevelName = (fn) => {
+    const atTop = (node) => node?.type === "Program" ||
+        ((node?.type === "ExportNamedDeclaration" ||
+            node?.type === "ExportDefaultDeclaration") &&
+            node.parent.type === "Program");
+    if (fn.type === "FunctionDeclaration") {
+        return atTop(fn.parent) ? (fn.id ?? undefined) : undefined;
+    }
+    const { parent } = fn;
+    return parent.type === "VariableDeclarator" &&
+        parent.init === fn &&
+        parent.id.type === "Identifier" &&
+        atTop(parent.parent.parent)
+        ? parent.id
+        : undefined;
+};
+const returnsFrom = (node) => {
+    const { parent } = node;
+    if (parent === null) {
+        return undefined;
+    }
+    if (parent.type === "ArrowFunctionExpression" ||
+        parent.type === "FunctionExpression" ||
+        parent.type === "FunctionDeclaration") {
+        return parent;
+    }
+    return returnsFrom(parent);
+};
+/**
+ * A function that maps one type into another lives with one of them, as part
+ * of that type's companion module, so a type's constructors are found where the
+ * type is. The rule reads syntax, so a mapper is a top-level function that
+ * takes a parameter of an imported type and returns a value of another
+ * imported type: a `.make(...)` on an imported binding, or an object literal
+ * of data whose return type is imported. It lives with neither type when no
+ * parameter's type is declared in its module. Construction inside a handler is
+ * not a mapper, Effect's own constructors make no domain value, an object with
+ * functions in it is an implementation, and a function that takes `unknown`
+ * parses what a boundary hands over, so it lives at that boundary.
+ */
+const mapperWithItsType = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "A function that maps one type into another lives in the module of one of them, as part of that type's companion.",
+        },
+        messages: {
+            mapper: "{{name}} maps one type into another but lives with neither. Move it next to its source type or its target type, as part of that type's companion module, the way a schema's constructors live with the schema.",
+        },
+    },
+    create: (context) => {
+        const { imports, types } = moduleNames(context.sourceCode.ast);
+        const domain = (name) => {
+            const source = name === undefined ? undefined : imports.get(name);
+            return source !== undefined && !isEffect(source);
+        };
+        const built = (fn, value) => {
+            if (value.type === "ParenthesizedExpression") {
+                return built(fn, value.expression);
+            }
+            if (value.type === "CallExpression" &&
+                value.callee.type === "MemberExpression" &&
+                !value.callee.computed &&
+                value.callee.property.type === "Identifier" &&
+                value.callee.property.name === "make") {
+                const name = rootName(value.callee.object);
+                return domain(name) ? name : undefined;
+            }
+            const returned = fn.returnType?.typeAnnotation;
+            if (value.type === "ObjectExpression" &&
+                isData(value) &&
+                returned?.type === "TSTypeReference") {
+                const name = rootName(returned.typeName);
+                return domain(name) ? name : undefined;
+            }
+            return undefined;
+        };
+        const reported = new Set();
+        const check = (fn, value) => {
+            const name = topLevelName(fn);
+            const target = built(fn, value);
+            const annotations = fn.params.flatMap((param) => {
+                const annotation = annotationOf(param);
+                return annotation === undefined ? [] : [annotation];
+            });
+            const sources = annotations.flatMap(typeNames);
+            if (name === undefined ||
+                target === undefined ||
+                reported.has(fn) ||
+                !sources.some((source) => imports.has(source)) ||
+                annotations.some(({ type }) => type === "TSUnknownKeyword") ||
+                sources.some((source) => types.has(source)) ||
+                sources.includes(target)) {
+                return;
+            }
+            reported.add(fn);
+            context.report({
+                messageId: "mapper",
+                node: name,
+                data: { name: name.name },
+            });
+        };
+        return {
+            ArrowFunctionExpression: (fn) => {
+                if (fn.body.type !== "BlockStatement") {
+                    check(fn, fn.body);
+                }
+            },
+            ReturnStatement: (node) => {
+                const fn = returnsFrom(node);
+                if (fn !== undefined && node.argument !== null) {
+                    check(fn, node.argument);
+                }
+            },
+        };
+    },
+};
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin = {
     meta: { name: "stack" },
     rules: {
+        "mapper-with-its-type": mapperWithItsType,
         "no-disable-comments": noDisableComments,
         "no-infinite-loops": noInfiniteLoops,
         "no-tagged-literal": noTaggedLiteral,

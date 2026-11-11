@@ -11,5 +11,6 @@ export default {
     "stack/prefer-tagged-union": stack.rules["stack/prefer-tagged-union"],
     "stack/no-tagged-literal": stack.rules["stack/no-tagged-literal"],
     "stack/type-from-schema": stack.rules["stack/type-from-schema"],
+    "stack/mapper-with-its-type": stack.rules["stack/mapper-with-its-type"],
   },
 };

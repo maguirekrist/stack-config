@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 /**
  * A comment that switches lint or Effect's diagnostics off: `eslint-disable`,
  * `oxlint-disable` and their `-next-line` and `enable` forms, and
@@ -318,10 +320,33 @@ const moduleNames = (program) => ({
             : [];
     })),
 });
-/** Effect's own constructors, such as `Ref.make`, make no domain value. */
-const isEffect = (source) => source === "effect" ||
-    source.startsWith("effect/") ||
-    source.startsWith("@effect/");
+/**
+ * Effect's and Foldkit's own values make no domain value: Effect's
+ * constructors, such as `Ref.make`, and Foldkit's program results, an init's
+ * or update's `Update.Return` and a view's `Document`.
+ */
+const isFramework = (source) => ["effect", "foldkit"].some((framework) => source === framework ||
+    source.startsWith(`${framework}/`) ||
+    source.startsWith(`@${framework}/`));
+const IMPORT = /\bimport\s+(?:type\s+)?([^;]*?)\s+from\s+["']([^"']+)["']/gu;
+const ALIAS = /\btype\s+([\w$]+)\s*(?:<[^=]*>)?=\s*([\w$]+)/gu;
+/** The local names an import clause binds: `B` in `{ A as B }`, `X` in `* as X`. */
+const bound = (clause) => {
+    const words = clause
+        .split(/[\s{},]+/u)
+        .filter((word) => word !== "" && word !== "*" && word !== "type");
+    return words.filter((word, at) => word !== "as" && words[at + 1] !== "as");
+};
+/**
+ * The aliases a module's text declares of a framework type, such as a Foldkit
+ * page's `type UpdateReturn = Update.Return<Model, Message>` in its Model.ts,
+ * which the page's update helpers import.
+ */
+const frameworkAliases = (file) => {
+    const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+    const frameworks = new Set([...text.matchAll(IMPORT)].flatMap(([, clause = "", source = ""]) => isFramework(source) ? bound(clause) : []));
+    return new Set([...text.matchAll(ALIAS)].flatMap(([, name = "", root = ""]) => frameworks.has(root) ? [name] : []));
+};
 /** The name a type or value is reached through: `Event` in `Event.cases.Requested`. */
 const rootName = (node) => {
     if (node.type === "Identifier") {
@@ -441,9 +466,14 @@ const returnsFrom = (node) => {
  * its module declares a parameter's type, the mapper belongs in the companion
  * bound to that type's name or the target's. When it declares none, a loose
  * mapper that takes an imported type lives with neither. Construction inside a
- * handler is not a mapper, Effect's own constructors make no domain value, an
- * object with functions in it is an implementation, and a function that takes
- * `unknown` parses what a boundary hands over, so it lives at that boundary.
+ * handler is not a mapper, Effect's and Foldkit's own values make no domain
+ * value, an object with functions in it is an implementation, and a function
+ * that takes `unknown` parses what a boundary hands over, so it lives at that
+ * boundary. A Foldkit page's init, update and view helpers return its program
+ * results, so they live in their own modules. Most name the result by an
+ * alias, such as `UpdateReturn`, imported from the page's Model.ts, so the rule
+ * reads the text of the module a relative import names to see what the alias
+ * stands for.
  */
 const mapperWithItsType = {
     meta: {
@@ -458,9 +488,21 @@ const mapperWithItsType = {
     },
     create: (context) => {
         const { imports, types } = moduleNames(context.sourceCode.ast);
+        const aliases = new Map();
+        const aliasesOf = (source) => {
+            const file = resolve(dirname(context.physicalFilename), source);
+            const known = aliases.get(file) ?? frameworkAliases(file);
+            aliases.set(file, known);
+            return known;
+        };
         const domain = (name) => {
-            const source = name === undefined ? undefined : imports.get(name);
-            return source !== undefined && !isEffect(source);
+            if (name === undefined) {
+                return false;
+            }
+            const source = imports.get(name);
+            return (source !== undefined &&
+                !isFramework(source) &&
+                !(source.startsWith(".") && aliasesOf(source).has(name)));
         };
         const built = (fn, value) => {
             if (value.type === "ParenthesizedExpression") {

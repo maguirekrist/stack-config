@@ -66,3 +66,12 @@ test("a project's config fails on a function that maps types it lives with neith
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(run.stdout, /stack\(mapper-with-its-type\)/u);
 });
+
+test("a project's config passes a Foldkit page's update helpers in their own module", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "page/Changes.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+});

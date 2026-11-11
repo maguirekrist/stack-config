@@ -125,31 +125,32 @@ const rootsAtSchema = (callee) => {
  */
 const namesCases = (type) => (type.type === "TSLiteralType" && type.literal.type === "Literal") ||
     (type.type === "TSUnionType" && type.types.every(namesCases));
+/** Whether a value is a string literal, `"Tag"` or `"Tag" as const`. */
+const isString = (node) => node.type === "TSAsExpression" || node.type === "TSSatisfiesExpression"
+    ? isString(node.expression)
+    : node.type === "Literal" && typeof node.value === "string";
 /**
- * A tagged union is an Effect Schema, so each union is declared one way and
- * gets its constructors, guards and `match` from the schema. The rule reads
- * syntax, not types, so it reports every hand-written tag: an object literal
- * with a `_tag`, a type with a `_tag` member, and a `Schema.Union` of inline
- * `Schema.TaggedStruct`s with distinct tags. An object handed to a `Schema`
+ * A tagged value is made by its type's own constructor, so its tag and fields
+ * are checked where the type is declared. The rule reads syntax, so it reports
+ * an object literal whose `_tag` is a string. An object handed to a `Schema`
  * call defines a schema or is encoded input, so it is left alone.
  */
-const preferTaggedUnion = {
+const noTaggedLiteral = {
     meta: {
         type: "suggestion",
         docs: {
-            description: "A tagged union is a Schema.TaggedUnion, its values made with the schema's constructors and its types taken from the schema.",
+            description: "A tagged value is made with its schema's constructor, never written as a { _tag } object.",
         },
         messages: {
-            value: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, or Case.make({ ... }) for a Schema.TaggedStruct. A tagged error is a Schema.TaggedError class, made with new.",
-            type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
-            union: "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
+            literal: "Make a tagged value with its schema's constructor: Union.cases.Case.make({ ... }) for a Schema.TaggedUnion, X.make({ ... }) for a Schema.TaggedStruct or a Schema.Class, and new for a Schema.TaggedError. If its type isn't a schema, declare it as one, or as a Data.TaggedEnum, whose constructors make its values.",
         },
     },
     create: (context) => ({
         ObjectExpression: (node) => {
             const tag = node.properties.find((property) => property.type === "Property" &&
                 !property.computed &&
-                isTagKey(property.key));
+                isTagKey(property.key) &&
+                isString(property.value));
             if (tag === undefined) {
                 return;
             }
@@ -159,8 +160,29 @@ const preferTaggedUnion = {
                 rootsAtSchema(parent.callee)) {
                 return;
             }
-            context.report({ messageId: "value", node: tag });
+            context.report({ messageId: "literal", node: tag });
         },
+    }),
+};
+/**
+ * A tagged union is an Effect Schema, so each union is declared one way and
+ * gets its constructors, guards and `match` from the schema. The rule reads
+ * syntax, not types, so it reports every hand-written tagged type: a type with
+ * a `_tag` member, and a `Schema.Union` of inline `Schema.TaggedStruct`s with
+ * distinct tags. `stack/no-tagged-literal` reports the values.
+ */
+const preferTaggedUnion = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "A tagged union is a Schema.TaggedUnion, its types taken from the schema.",
+        },
+        messages: {
+            type: "Declare a tagged type as a schema: Schema.TaggedUnion for a union, Schema.TaggedStruct for one case. Take its type with typeof Union.Type, and one case's with typeof Union.cases.Case.Type.",
+            union: "A union of tagged structs is Schema.TaggedUnion({ Case: { ...fields } }), which gives cases, guards and match.",
+        },
+    },
+    create: (context) => ({
         TSPropertySignature: (node) => {
             if (!node.computed &&
                 isTagKey(node.key) &&
@@ -283,6 +305,7 @@ const plugin = {
     rules: {
         "no-disable-comments": noDisableComments,
         "no-infinite-loops": noInfiniteLoops,
+        "no-tagged-literal": noTaggedLiteral,
         "prefer-option": preferOption,
         "prefer-tagged-union": preferTaggedUnion,
         "type-from-schema": typeFromSchema,

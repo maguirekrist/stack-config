@@ -132,6 +132,9 @@ export const rules: Rules = {
   // A tagged union is a Schema.TaggedUnion: one way to declare it, and its
   // constructors, guards and match come from the schema.
   "stack/prefer-tagged-union": "error",
+  // A tagged value comes from its schema's constructor, which checks its tag
+  // and fields where the type is declared.
+  "stack/no-tagged-literal": "error",
   // A type named after a schema is its Type, so the two never drift apart.
   "stack/type-from-schema": "error",
 

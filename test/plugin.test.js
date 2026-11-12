@@ -264,10 +264,10 @@ const page = (code) => ({
 });
 const pageImports =
   'import type { Element, UserId } from "@app/domain";\nimport type { Entry, Field, Listing, Model, Row, UpdateReturn } from "./Model.ts";\n';
-const companion = (name) => [
+const member = (name, companion) => [
   {
-    messageId: "companion",
-    data: { name, source: "MachineRequest", target: "SessionEvent" },
+    messageId: "member",
+    data: { name, companion, source: "MachineRequest", target: "SessionEvent" },
   },
 ];
 
@@ -298,13 +298,22 @@ new RuleTester().run(
         `${imports}export interface Started { readonly at: EpochMillis }\nexport const started = (at: EpochMillis): Started => ({ at });`,
       ),
       ts(
-        `${declares}export const MachineRequest = {\n  toRequested: (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt }),\n};`,
+        `${declares}const machineRequested = (\n  request: MachineRequest,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
       ),
       ts(
-        `${declaresTypes}const SessionEvent = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
+        `${declares}export const toRequested = (request: MachineRequest, at: EpochMillis) =>\n  SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });`,
       ),
       ts(
-        `${declares}export namespace MachineRequest {\n  export const toRequested = (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n}`,
+        `${declaresTypes}export function fromRequest(request: MachineRequest): SessionEvent {\n  return { _tag: "MachineRequested", attempt: request.attempt };\n}`,
+      ),
+      ts(
+        `${imports}export const SessionEvents = {\n  requested: (attempt: number, at: number) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt }),\n};`,
+      ),
+      ts(
+        'import type { Held } from "./Designed.ts";\nexport interface Orphan {\n  readonly label: string;\n}\nexport const dormant = (held: Held): Orphan => ({ label: held.label });',
+      ),
+      ts(
+        `${foldkitPage}type UpdateReturn = Update.Return<Model, Message>;\nexport const Page = {\n  close: (model: Model): UpdateReturn => ({\n    model: { ...model, isOpen: false },\n  }),\n};`,
       ),
       ts(
         `${imports}const whole = ({ left, top }: Point): Point => ({\n  left: Math.round(left),\n  top: Math.round(top),\n});`,
@@ -331,21 +340,86 @@ new RuleTester().run(
     invalid: [
       {
         ...ts(
-          `${declares}const machineRequested = (\n  request: MachineRequest,\n  at: EpochMillis,\n): SessionEvent => ({ _tag: "MachineRequested", at, attempt: request.attempt });`,
-        ),
-        errors: companion("machineRequested"),
-      },
-      {
-        ...ts(
           `${declaresTypes}const Events = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
         ),
-        errors: companion("fromRequest"),
+        errors: member("fromRequest", "Events"),
       },
       {
         ...ts(
           `${declares}export namespace Requests {\n  export function toRequested(request: MachineRequest, at: EpochMillis) {\n    return SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n  }\n}`,
         ),
-        errors: companion("toRequested"),
+        errors: member("toRequested", "Requests"),
+      },
+      {
+        ...ts(
+          `${declares}export const MachineRequest = {\n  toRequested: (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt }),\n};`,
+        ),
+        errors: member("toRequested", "MachineRequest"),
+      },
+      {
+        ...ts(
+          `${declaresTypes}const SessionEvent = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
+        ),
+        errors: member("fromRequest", "SessionEvent"),
+      },
+      {
+        ...ts(
+          `${declares}export namespace MachineRequest {\n  export const toRequested = (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n}`,
+        ),
+        errors: member("toRequested", "MachineRequest"),
+      },
+      {
+        ...ts(
+          'import type { Book } from "./Book.ts";\ninterface Holder {\n  readonly name: string;\n}\nexport const Holder = {\n  of: (holder: Holder): Book => ({ title: holder.name }),\n};',
+        ),
+        errors: [
+          {
+            messageId: "member",
+            data: {
+              name: "of",
+              companion: "Holder",
+              source: "Holder",
+              target: "Book",
+            },
+          },
+        ],
+      },
+      {
+        ...ts(
+          'import type { Held } from "./Designed.ts";\nexport interface Orphan {\n  readonly label: string;\n}\nexport const Orphan = {\n  dormant: (held: Held): Orphan => ({ label: held.label }),\n};',
+        ),
+        errors: [
+          {
+            messageId: "member",
+            data: {
+              name: "dormant",
+              companion: "Orphan",
+              source: "Held",
+              target: "Orphan",
+            },
+          },
+        ],
+      },
+      {
+        ...ts(
+          `${imports}export const SessionEvents = {\n  requested: (request: MachineRequest) =>\n    SessionEvent.cases.MachineRequested.make({ attempt: request.attempt }),\n};`,
+        ),
+        errors: member("requested", "SessionEvents"),
+      },
+      {
+        ...ts(
+          `${imports}export const requestedOf = (request: MachineRequest) =>\n  SessionEvent.cases.MachineRequested.make({ attempt: request.attempt });`,
+        ),
+        errors: [
+          {
+            messageId: "mapper",
+            data: {
+              name: "requestedOf",
+              source: "MachineRequest",
+              target: "SessionEvent",
+            },
+          },
+        ],
       },
       {
         ...ts(
@@ -401,6 +475,9 @@ new RuleTester().run(
 
 const project = [{ workspace: ["@app"], utilities: ["@app/utilities"] }];
 const named = (name) => [{ messageId: "named", data: { name } }];
+const stutter = (namespace, name, suggested) => [
+  { messageId: "stutter", data: { namespace, name, suggested } },
+];
 
 new RuleTester().run(
   "function-imports-from-utilities",
@@ -423,6 +500,39 @@ new RuleTester().run(
       ts('import plugin from "./plugin.ts";'),
       ts('import { fieldOf } from "@app/domain";'),
       { ...ts('import { fieldOf } from "@apps/domain";'), options: project },
+      ts(
+        'import * as DraftPage from "./DraftPage.ts";\nexport const page = DraftPage.of(DraftPage.empty);',
+      ),
+      ts(
+        'import * as DraftPage from "./DraftPage.ts";\nexport type Page = DraftPage.DraftPage;\nexport type Of = typeof DraftPage.pageOf;',
+      ),
+      ts(
+        'import * as Questionnaire from "./Questionnaire.ts";\nexport const answer = Questionnaire.QuestionnaireAnswer.make({});',
+      ),
+      ts(
+        'import * as Draft from "./Draft.ts";\nexport const all = Draft.drafts;',
+      ),
+      ts(
+        'import { DraftPage } from "./DraftPage.ts";\nexport const page = DraftPage.pageOf;',
+      ),
+      ts(
+        'import * as Option from "effect/Option";\nexport const is = Option.isOption;',
+      ),
+      ts(
+        'import * as Draft from "@app/draft";\nexport const draft = Draft.draftOf;',
+      ),
+      ts(
+        'import * as Page from "./Page.ts";\nexport const page = Page.page;\nexport const view = Page.view;',
+      ),
+      ts(
+        'import * as FirmView from "./Firm.view.ts";\nexport const body = FirmView.view;',
+      ),
+      {
+        ...ts(
+          'import * as Draft from "@apps/draft";\nexport const draft = Draft.draftOf;',
+        ),
+        options: project,
+      },
     ],
     invalid: [
       {
@@ -451,6 +561,50 @@ new RuleTester().run(
         ...ts('import { chunk } from "@app/utilities-extra";'),
         options: project,
         errors: named("chunk"),
+      },
+      {
+        ...ts(
+          'import * as DraftPage from "./DraftPage.ts";\nexport const page = DraftPage.pageOf(DraftPage.empty);',
+        ),
+        errors: stutter("DraftPage", "pageOf", "of"),
+      },
+      {
+        ...ts(
+          'import * as Questionnaire from "./Questionnaire.ts";\nexport const blank = Questionnaire.emptyQuestionnaire;',
+        ),
+        errors: stutter("Questionnaire", "emptyQuestionnaire", "empty"),
+      },
+      {
+        ...ts(
+          'import * as Reader from "../internal/Reader.ts";\nexport const read = Reader.readerOf;',
+        ),
+        errors: stutter("Reader", "readerOf", "of"),
+      },
+      {
+        ...ts(
+          'import * as DraftPage from "./DraftPage.ts";\nexport const page = DraftPage.draftPageOf;',
+        ),
+        errors: stutter("DraftPage", "draftPageOf", "of"),
+      },
+      {
+        ...ts(
+          'import * as Url from "./Url.ts";\nexport const parse = Url.parseURL;',
+        ),
+        errors: stutter("Url", "parseURL", "parse"),
+      },
+      {
+        ...ts(
+          'import * as Filing from "@app/filing";\nexport const draft = Filing.toFilingDraft;',
+        ),
+        options: project,
+        errors: stutter("Filing", "toFilingDraft", "toDraft"),
+      },
+      {
+        ...ts(
+          'import * as Text from "@app/utilities/Text";\nexport const text = Text.textOf;',
+        ),
+        options: project,
+        errors: stutter("Text", "textOf", "of"),
       },
     ],
   },

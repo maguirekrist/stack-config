@@ -67,6 +67,38 @@ test("a project's config fails on a function that maps types it lives with neith
   assert.match(run.stdout, /stack\(mapper-with-its-type\)/u);
 });
 
+test("a project's config fails on a mapper written as a member of an object named after its type", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "companion.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout, /stack\(mapper-with-its-type\)/u);
+  assert.match(run.stdout, /`of` maps Shelf into Book as a member of `Shelf`/u);
+});
+
+test("a project's config passes a mapper exported from the module that declares its type", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "holder.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+});
+
+test("a project's config fails on a member that repeats its namespace", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "namespaces.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  const found = run.stdout.match(/stack\(function-imports-from-utilities\)/gu);
+  assert.equal(found?.length, 1, run.stdout);
+  assert.match(run.stdout, /Write `Holder\.empty`/u);
+});
+
 test("a project's config passes a Foldkit page's update helpers in their own module", () => {
   const run = spawnSync(
     "pnpm",

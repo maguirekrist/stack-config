@@ -264,12 +264,6 @@ const page = (code) => ({
 });
 const pageImports =
   'import type { Element, UserId } from "@app/domain";\nimport type { Entry, Field, Listing, Model, Row, UpdateReturn } from "./Model.ts";\n';
-const member = (name, companion) => [
-  {
-    messageId: "member",
-    data: { name, companion, source: "MachineRequest", target: "SessionEvent" },
-  },
-];
 
 new RuleTester().run(
   "mapper-with-its-type",
@@ -338,74 +332,6 @@ new RuleTester().run(
       ),
     ],
     invalid: [
-      {
-        ...ts(
-          `${declaresTypes}const Events = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
-        ),
-        errors: member("fromRequest", "Events"),
-      },
-      {
-        ...ts(
-          `${declares}export namespace Requests {\n  export function toRequested(request: MachineRequest, at: EpochMillis) {\n    return SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n  }\n}`,
-        ),
-        errors: member("toRequested", "Requests"),
-      },
-      {
-        ...ts(
-          `${declares}export const MachineRequest = {\n  toRequested: (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt }),\n};`,
-        ),
-        errors: member("toRequested", "MachineRequest"),
-      },
-      {
-        ...ts(
-          `${declaresTypes}const SessionEvent = {\n  fromRequest: (request: MachineRequest): SessionEvent => ({\n    _tag: "MachineRequested",\n    attempt: request.attempt,\n  }),\n};`,
-        ),
-        errors: member("fromRequest", "SessionEvent"),
-      },
-      {
-        ...ts(
-          `${declares}export namespace MachineRequest {\n  export const toRequested = (request: MachineRequest, at: EpochMillis) =>\n    SessionEvent.cases.MachineRequested.make({ at, attempt: request.attempt });\n}`,
-        ),
-        errors: member("toRequested", "MachineRequest"),
-      },
-      {
-        ...ts(
-          'import type { Book } from "./Book.ts";\ninterface Holder {\n  readonly name: string;\n}\nexport const Holder = {\n  of: (holder: Holder): Book => ({ title: holder.name }),\n};',
-        ),
-        errors: [
-          {
-            messageId: "member",
-            data: {
-              name: "of",
-              companion: "Holder",
-              source: "Holder",
-              target: "Book",
-            },
-          },
-        ],
-      },
-      {
-        ...ts(
-          'import type { Held } from "./Designed.ts";\nexport interface Orphan {\n  readonly label: string;\n}\nexport const Orphan = {\n  dormant: (held: Held): Orphan => ({ label: held.label }),\n};',
-        ),
-        errors: [
-          {
-            messageId: "member",
-            data: {
-              name: "dormant",
-              companion: "Orphan",
-              source: "Held",
-              target: "Orphan",
-            },
-          },
-        ],
-      },
-      {
-        ...ts(
-          `${imports}export const SessionEvents = {\n  requested: (request: MachineRequest) =>\n    SessionEvent.cases.MachineRequested.make({ attempt: request.attempt }),\n};`,
-        ),
-        errors: member("requested", "SessionEvents"),
-      },
       {
         ...ts(
           `${imports}export const requestedOf = (request: MachineRequest) =>\n  SessionEvent.cases.MachineRequested.make({ attempt: request.attempt });`,
@@ -605,6 +531,76 @@ new RuleTester().run(
         ),
         options: project,
         errors: stutter("Text", "textOf", "of"),
+      },
+    ],
+  },
+);
+
+const companion = (name) => [{ messageId: "companion", data: { name } }];
+
+new RuleTester().run(
+  "no-companion-objects",
+  plugin.rules["no-companion-objects"],
+  {
+    valid: [
+      ts("export const evolve = {\n  Added: (state: number) => state + 1,\n};"),
+      ts("const OPERATORS = { eq: (a: number, b: number) => a === b };"),
+      ts('export const Limits = { max: 3, label: "limit" };'),
+      ts(
+        'import { Schema } from "effect";\nexport const Page = Schema.Struct({ title: Schema.String });',
+      ),
+      ts(
+        'import { Context } from "effect";\nexport class Door extends Context.Service<Door, { readonly kind: string }>()("Door") {}',
+      ),
+      ts(
+        "export const make = () => {\n  const Handlers = { open: () => 1 };\n  return Handlers;\n};",
+      ),
+      ts("export const Shelf = [(shelf: number) => shelf];"),
+      ts(
+        'declare module "virtual:design" {\n  export function load(): void;\n}',
+      ),
+      ts(
+        "declare global {\n  interface Window {\n    readonly design: string;\n  }\n}",
+      ),
+      ts(
+        "export namespace Shapes {\n  export type Square = { readonly side: number };\n  export interface Circle {\n    readonly radius: number;\n  }\n}",
+      ),
+      ts("export declare namespace Ambient {\n  const version: string;\n}"),
+    ],
+    invalid: [
+      {
+        ...ts(
+          "export interface Shelf {\n  readonly label: string;\n}\nexport const Shelf = {\n  of: (shelf: Shelf): string => shelf.label,\n};",
+        ),
+        errors: companion("Shelf"),
+      },
+      {
+        ...ts(
+          "const Events = {\n  fromRequest(request: number) {\n    return request;\n  },\n};",
+        ),
+        errors: companion("Events"),
+      },
+      {
+        ...ts(
+          'export const Holder = {\n  of: (name: string) => ({ name }),\n  label: "holder",\n} as const;',
+        ),
+        errors: companion("Holder"),
+      },
+      {
+        ...ts(
+          "export const Holder = {\n  of: function (name: string) {\n    return { name };\n  },\n} satisfies Record<string, unknown>;",
+        ),
+        errors: companion("Holder"),
+      },
+      {
+        ...ts(
+          "export namespace Requests {\n  export function toRequested(at: number) {\n    return { at };\n  }\n}",
+        ),
+        errors: companion("Requests"),
+      },
+      {
+        ...ts("namespace MachineRequest {\n  export const limit = 3;\n}"),
+        errors: companion("MachineRequest"),
       },
     ],
   },

@@ -119,6 +119,9 @@ export const rules = {
     // module that declares one of them, so a type's constructors are found
     // where the type is, through that module's namespace.
     "stack/mapper-with-its-type": "error",
+    // A project's functions are reached through their module's namespace, so
+    // no object or namespace collects them under a type's name.
+    "stack/no-companion-objects": "error",
     // Only a utilities package's helpers are imported by name. The project's
     // other functions are reached through their module's namespace, by a name
     // that doesn't repeat it. Here only relative imports are the project's own

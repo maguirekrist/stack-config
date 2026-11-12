@@ -517,66 +517,23 @@ const isData = (node: ESTree.ObjectExpression): boolean =>
 
 type Mapper = ESTree.ArrowFunctionExpression | ESTree.Function;
 
-/**
- * Where a top-level function lives: on its own, or as a member of a companion,
- * an object or namespace bound at the top of the module.
- */
-interface Home {
-  readonly name: ESTree.BindingIdentifier | ESTree.IdentifierName;
-  readonly companion: string | undefined;
-}
-
 const atTop = (node: ESTree.Node | null): boolean =>
   node?.type === "Program" ||
   ((node?.type === "ExportNamedDeclaration" ||
     node?.type === "ExportDefaultDeclaration") &&
     node.parent.type === "Program");
 
-/** The home of a declaration whose statement sits in `container`. */
-const declaredIn = (
-  name: Home["name"],
-  container: ESTree.Node | null,
-): Home | undefined => {
-  if (atTop(container)) {
-    return { name, companion: undefined };
-  }
-  const block =
-    container?.type === "ExportNamedDeclaration" ? container.parent : container;
-  const namespace = block?.type === "TSModuleBlock" ? block.parent : undefined;
-  return namespace?.type === "TSModuleDeclaration" &&
-    namespace.id.type === "Identifier" &&
-    atTop(namespace.parent)
-    ? { name, companion: namespace.id.name }
-    : undefined;
-};
-
-const homeOf = (fn: Mapper): Home | undefined => {
+/** The name of a function declared at the top of its module. */
+const topLevelName = (fn: Mapper): ESTree.BindingIdentifier | undefined => {
   if (fn.type === "FunctionDeclaration") {
-    return fn.id === null ? undefined : declaredIn(fn.id, fn.parent);
+    return fn.id !== null && atTop(fn.parent) ? fn.id : undefined;
   }
   const { parent } = fn;
-  if (
-    parent.type === "VariableDeclarator" &&
+  return parent.type === "VariableDeclarator" &&
     parent.init === fn &&
-    parent.id.type === "Identifier"
-  ) {
-    return declaredIn(parent.id, parent.parent.parent);
-  }
-  if (
-    parent.type !== "Property" ||
-    parent.value !== fn ||
-    parent.computed ||
-    parent.key.type !== "Identifier"
-  ) {
-    return undefined;
-  }
-  const object = parent.parent;
-  const binding = object.parent;
-  return binding?.type === "VariableDeclarator" &&
-    binding.init === object &&
-    binding.id.type === "Identifier" &&
-    atTop(binding.parent.parent)
-    ? { name: parent.key, companion: binding.id.name }
+    parent.id.type === "Identifier" &&
+    atTop(parent.parent.parent)
+    ? parent.id
     : undefined;
 };
 
@@ -599,13 +556,12 @@ const returnsFrom = (node: ESTree.Node): Mapper | undefined => {
  * A function that maps one type into another is a top-level export of the
  * module that declares one of them, so callers reach it through that module's
  * namespace, as `DraftPage.of`. The rule reads syntax, so a mapper is a
- * top-level function, or a member of a top-level object or namespace, that
- * takes a parameter of a named type and returns a value of another type: a
- * `.make(...)` on a binding, or an object literal of data whose return type is
- * named. A mapper that is a member of an object or namespace is reported,
- * since a project has no companion objects. A top-level mapper passes when its
- * module declares a type it takes or builds, and is reported when it takes an
- * imported type and its module declares neither. Construction inside a
+ * top-level function that takes a parameter of a named type and returns a
+ * value of another type: a `.make(...)` on a binding, or an object literal of
+ * data whose return type is named. A mapper passes when its module declares a
+ * type it takes or builds, and is reported when it takes an imported type and
+ * its module declares neither. `no-companion-objects` reports a mapper kept in
+ * an object or namespace. Construction inside a
  * handler is not a mapper, Effect's and Foldkit's own values make no domain
  * value, an object with functions in it is an implementation, and a function
  * that takes `unknown` parses what a boundary hands over, so it lives at that
@@ -620,13 +576,11 @@ const mapperWithItsType: Rule = {
     type: "suggestion",
     docs: {
       description:
-        "A function that maps one type into another is a top-level export of the module that declares one of them, never a member of a companion object.",
+        "A function that maps one type into another is a top-level export of the module that declares one of them.",
     },
     messages: {
       mapper:
         "`{{name}}` maps {{source}} into {{target}}, but its module declares neither. Move it into the module that declares `{{source}}` or `{{target}}`, as a top-level export, so callers reach it through that module's namespace, as `DraftPage.of`.",
-      member:
-        "`{{name}}` maps {{source}} into {{target}} as a member of `{{companion}}`, and a project has no companion objects. Export it as a top-level function of the module that declares `{{source}}` or `{{target}}`, so callers reach it through that module's namespace, as `DraftPage.of`.",
     },
   },
   create: (context) => {
@@ -685,7 +639,7 @@ const mapperWithItsType: Rule = {
     };
     const reported = new Set<Mapper>();
     const check = (fn: Mapper, value: ESTree.Expression) => {
-      const home = homeOf(fn);
+      const name = topLevelName(fn);
       const target = built(fn, value);
       const annotations = fn.params.flatMap((param) => {
         const annotation = annotationOf(param);
@@ -693,7 +647,7 @@ const mapperWithItsType: Rule = {
       });
       const sources = annotations.flatMap(typeNames);
       if (
-        home === undefined ||
+        name === undefined ||
         target === undefined ||
         reported.has(fn) ||
         annotations.some(({ type }) => type === "TSUnknownKeyword") ||
@@ -701,21 +655,17 @@ const mapperWithItsType: Rule = {
       ) {
         return;
       }
-      const { name, companion } = home;
       const declared = sources.filter((source) => types.has(source));
       const imported = sources.filter((source) => imports.has(source));
       const [source = imported.find(domain) ?? imported[0]] = declared;
-      if (
-        source === undefined ||
-        (companion === undefined && (declared.length > 0 || types.has(target)))
-      ) {
+      if (source === undefined || declared.length > 0 || types.has(target)) {
         return;
       }
       reported.add(fn);
       context.report({
-        messageId: companion === undefined ? "mapper" : "member",
+        messageId: "mapper",
         node: name,
-        data: { name: name.name, companion: companion ?? "", source, target },
+        data: { name: name.name, source, target },
       });
     };
     return {
@@ -887,12 +837,108 @@ const functionImportsFromUtilities: Rule = {
   },
 };
 
+/** An object literal, seen through `as`, `satisfies` and parentheses. */
+const objectLiteral = (
+  node: ESTree.Expression | null,
+): ESTree.ObjectExpression | undefined => {
+  if (node === null) {
+    return undefined;
+  }
+  if (
+    node.type === "TSAsExpression" ||
+    node.type === "TSSatisfiesExpression" ||
+    node.type === "ParenthesizedExpression"
+  ) {
+    return objectLiteral(node.expression);
+  }
+  return node.type === "ObjectExpression" ? node : undefined;
+};
+
+/** A PascalCase name, as a module or type has; `OPERATORS` is a constant. */
+const PASCAL_CASE = /^\p{Lu}.*\p{Ll}/u;
+
+/** A statement that declares only types. */
+const declaresTypes = (statement: ESTree.Statement): boolean => {
+  const declaration =
+    statement.type === "ExportNamedDeclaration"
+      ? statement.declaration
+      : statement;
+  return (
+    declaration?.type === "TSInterfaceDeclaration" ||
+    declaration?.type === "TSTypeAliasDeclaration"
+  );
+};
+
+/**
+ * A project's functions are top-level exports of a module, so it has no
+ * companion objects: no top-level object with a PascalCase name that holds a
+ * function, and no namespace that holds a value. Callers reach the functions
+ * through the module's namespace instead, as `DraftPage.of`. An object named
+ * in camelCase, such as an aggregate's `evolve`, is an implementation, and a
+ * constant table such as `OPERATORS` is data, so both pass. Classes, schemas,
+ * ambient declarations and namespaces of types pass too.
+ */
+const noCompanionObjects: Rule = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "A project's functions are top-level exports of a module, never members of a companion object or namespace.",
+    },
+    messages: {
+      companion:
+        '`{{name}}` is a companion object, and a project has none. Export each of its members as a top-level function of this module, so callers import the module as a namespace, `import * as DraftPage from "./DraftPage.ts"`, and call `DraftPage.of`.',
+    },
+  },
+  create: (context) => ({
+    VariableDeclarator: (node) => {
+      const object = objectLiteral(node.init);
+      if (
+        node.id.type !== "Identifier" ||
+        !PASCAL_CASE.test(node.id.name) ||
+        !atTop(node.parent.parent) ||
+        object === undefined ||
+        !object.properties.some(
+          (property) =>
+            property.type === "Property" &&
+            (property.value.type === "ArrowFunctionExpression" ||
+              property.value.type === "FunctionExpression"),
+        )
+      ) {
+        return;
+      }
+      context.report({
+        messageId: "companion",
+        node: node.id,
+        data: { name: node.id.name },
+      });
+    },
+    TSModuleDeclaration: (node) => {
+      if (
+        node.declare ||
+        node.id.type !== "Identifier" ||
+        !atTop(node.parent) ||
+        node.body?.type !== "TSModuleBlock" ||
+        node.body.body.every(declaresTypes)
+      ) {
+        return;
+      }
+      context.report({
+        messageId: "companion",
+        node: node.id,
+        data: { name: node.id.name },
+      });
+    },
+  }),
+};
+
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin: Plugin = {
   meta: { name: "stack" },
   rules: {
     "function-imports-from-utilities": functionImportsFromUtilities,
     "mapper-with-its-type": mapperWithItsType,
+    "no-companion-objects": noCompanionObjects,
     "no-disable-comments": noDisableComments,
     "no-infinite-loops": noInfiniteLoops,
     "no-tagged-literal": noTaggedLiteral,

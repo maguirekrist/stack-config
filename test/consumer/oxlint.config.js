@@ -12,5 +12,9 @@ export default {
     "stack/no-tagged-literal": stack.rules["stack/no-tagged-literal"],
     "stack/type-from-schema": stack.rules["stack/type-from-schema"],
     "stack/mapper-with-its-type": stack.rules["stack/mapper-with-its-type"],
+    ...stack.functionImports({
+      workspace: ["@app"],
+      utilities: ["@app/utilities"],
+    }),
   },
 };

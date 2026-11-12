@@ -398,3 +398,60 @@ new RuleTester().run(
     ],
   },
 );
+
+const project = [{ workspace: ["@app"], utilities: ["@app/utilities"] }];
+const named = (name) => [{ messageId: "named", data: { name } }];
+
+new RuleTester().run(
+  "function-imports-from-utilities",
+  plugin.rules["function-imports-from-utilities"],
+  {
+    valid: [
+      { ...ts('import { chunk } from "@app/utilities";'), options: project },
+      {
+        ...ts('import { slugOf } from "@app/utilities/Text";'),
+        options: project,
+      },
+      ts('import { pipe } from "effect";'),
+      ts('import { describe, it } from "vitest";'),
+      ts('import { html } from "foldkit/html";'),
+      ts('import { DraftPage } from "./DraftPage.ts";'),
+      ts('import { MAX_SIZE } from "./Limits.ts";'),
+      ts('import * as Reader from "./Reader.ts";'),
+      ts('import type { pageOf } from "./DraftPage.ts";'),
+      ts('import { type pageOf, DraftPage } from "./DraftPage.ts";'),
+      ts('import plugin from "./plugin.ts";'),
+      ts('import { fieldOf } from "@app/domain";'),
+      { ...ts('import { fieldOf } from "@apps/domain";'), options: project },
+    ],
+    invalid: [
+      {
+        ...ts('import { pageOf } from "./DraftPage.ts";'),
+        errors: named("pageOf"),
+      },
+      {
+        ...ts('import { top } from "../internal/Reader.ts";'),
+        errors: named("top"),
+      },
+      {
+        ...ts('import { pageOf as page, DraftPage } from "./DraftPage.ts";'),
+        errors: named("pageOf"),
+      },
+      {
+        ...ts('import { fieldOf } from "@app/domain";'),
+        options: project,
+        errors: named("fieldOf"),
+      },
+      {
+        ...ts('import { emptyDraft } from "@app/filing/Filing/Draft";'),
+        options: project,
+        errors: named("emptyDraft"),
+      },
+      {
+        ...ts('import { chunk } from "@app/utilities-extra";'),
+        options: project,
+        errors: named("chunk"),
+      },
+    ],
+  },
+);

@@ -584,10 +584,86 @@ const mapperWithItsType = {
         };
     },
 };
+/** Whether an import source is one of the packages, or a subpath of one: `@app` names every `@app/*` package. */
+const under = (packages) => (source) => packages.some((name) => source === name || source.startsWith(`${name}/`));
+/** The strings an option lists. */
+const listed = (settings, key) => {
+    const value = typeof settings === "object" && settings !== null
+        ? Reflect.get(settings, key)
+        : undefined;
+    return Array.isArray(value)
+        ? value.filter((item) => typeof item === "string")
+        : [];
+};
+/** A type, schema, companion or namespace is named in PascalCase; a free function or value isn't. */
+const CAPITALIZED = /^\p{Lu}/u;
+/**
+ * Only a utilities package's generic helpers are imported by name. A function
+ * or value about one type is a member of that type's companion, as
+ * `DraftPage.of`, and a module's other helpers are reached through its
+ * namespace, `import * as Reader from "./Reader.ts"`. The rule reads syntax, so
+ * it reports a value specifier whose imported name doesn't start with a
+ * capital, imported from the project's own code: a relative path, or a package
+ * the `workspace` option names. The `utilities` packages, external packages,
+ * type imports and namespace and default imports are left alone.
+ */
+const functionImportsFromUtilities = {
+    meta: {
+        type: "suggestion",
+        docs: {
+            description: "Only a utilities package's helpers are imported by name; a type's functions live on its companion, and a module's other helpers are reached through its namespace.",
+        },
+        messages: {
+            named: "`{{name}}` is imported by name from the project's own code, and only a utilities package's helpers are. Move a generic helper into the utilities package. Make a function or value about one type a member of that type's companion, as `DraftPage.of`, not `DraftPage.pageOf`. Otherwise import its module as a namespace, `import * as Reader from \"./Reader.ts\"`.",
+        },
+        schema: [
+            {
+                type: "object",
+                properties: {
+                    workspace: { type: "array", items: { type: "string" } },
+                    utilities: { type: "array", items: { type: "string" } },
+                },
+                additionalProperties: false,
+            },
+        ],
+        defaultOptions: [{ workspace: [], utilities: [] }],
+    },
+    create: (context) => {
+        const [settings] = context.options;
+        const isWorkspace = under(listed(settings, "workspace"));
+        const isUtility = under(listed(settings, "utilities"));
+        return {
+            ImportDeclaration: (node) => {
+                const source = node.source.value;
+                if (node.importKind === "type" ||
+                    isUtility(source) ||
+                    !(source.startsWith(".") || isWorkspace(source))) {
+                    return;
+                }
+                for (const specifier of node.specifiers) {
+                    if (specifier.type !== "ImportSpecifier" ||
+                        specifier.importKind === "type") {
+                        continue;
+                    }
+                    const { imported } = specifier;
+                    const name = imported.type === "Literal" ? imported.value : imported.name;
+                    if (!CAPITALIZED.test(name)) {
+                        context.report({
+                            messageId: "named",
+                            node: specifier,
+                            data: { name },
+                        });
+                    }
+                }
+            },
+        };
+    },
+};
 /** The shared lint setup's own rules, as `stack/<rule>`. */
 const plugin = {
     meta: { name: "stack" },
     rules: {
+        "function-imports-from-utilities": functionImportsFromUtilities,
         "mapper-with-its-type": mapperWithItsType,
         "no-disable-comments": noDisableComments,
         "no-infinite-loops": noInfiniteLoops,

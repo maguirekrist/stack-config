@@ -9,7 +9,7 @@ The rules start from what the stack's authors run:
 - **Effect:** every rule Effect recommends (its `strict` preset), as errors, every rule of its `style` preset but `missing-pipeable-signature`, and its native-API rules inside Effect code, as Alchemy runs them. Effect is imported by name from its barrels, `import { Effect, Schema } from "effect"`.
 - **Oxlint:** its `correctness`, `suspicious` and `perf` groups, the type-safety TypeScript rules, and the TypeScript and unicorn rules Alchemy adds.
 - **Foldkit:** its recommended rules, in a project's Foldkit app folders only.
-- **Our own:** a few rules kept because they make the code clearer, including `stack/no-disable-comments` from this package's plugin. `stack/prefer-tagged-union` makes every tagged union an Effect Schema, its types taken from `typeof Union.Type`, and `stack/no-tagged-literal` makes its values with `Union.cases.Case.make`, never as a `{ _tag }` object. A recursive union's hand-written types, and code that runs where Effect can't load, are path exceptions to both rules. A project whose tests write expected values as literals switches `stack/no-tagged-literal` off for its test paths. `stack/type-from-schema` keeps a type and its schema from drifting apart: a type named after a schema is `typeof X.Type`. A schema that refers to itself declares its other fields once as `XFields`, and its interface extends `Schema.Struct.Type<typeof XFields>` with only the field that refers back. `stack/mapper-with-its-type` keeps a function that maps one type into another with one of them, as part of that type's companion. It reads syntax, and a mapper builds an imported type with `.make` or an object literal. When the mapper's module declares a type the mapper takes, the mapper is a member of that type's companion, the object or namespace bound to the type's name, or of the companion named after the type it builds. When the module declares none of them, the rule reports a top-level mapper that takes an imported type. A function that returns Effect's or Foldkit's own values, such as a Foldkit page's init, update and view helpers, which return `Update.Return` or `Document`, is not a mapper, so those helpers live in their own modules. The rule follows a relative import one module deep to see that an alias such as a page's `UpdateReturn` names Foldkit's `Update.Return`; an alias of an Effect type, such as `Schema.Schema.Type<typeof Field>`, still names a domain value. A project whose tests build fixtures in test helpers switches it off for its test paths.
+- **Our own:** a few rules kept because they make the code clearer, including `stack/no-disable-comments` from this package's plugin. `stack/prefer-tagged-union` makes every tagged union an Effect Schema, its types taken from `typeof Union.Type`, and `stack/no-tagged-literal` makes its values with `Union.cases.Case.make`, never as a `{ _tag }` object. A recursive union's hand-written types, and code that runs where Effect can't load, are path exceptions to both rules. A project whose tests write expected values as literals switches `stack/no-tagged-literal` off for its test paths. `stack/type-from-schema` keeps a type and its schema from drifting apart: a type named after a schema is `typeof X.Type`. A schema that refers to itself declares its other fields once as `XFields`, and its interface extends `Schema.Struct.Type<typeof XFields>` with only the field that refers back. `stack/mapper-with-its-type` keeps a function that maps one type into another with one of them, as part of that type's companion. It reads syntax, and a mapper builds an imported type with `.make` or an object literal. When the mapper's module declares a type the mapper takes, the mapper is a member of that type's companion, the object or namespace bound to the type's name, or of the companion named after the type it builds. When the module declares none of them, the rule reports a top-level mapper that takes an imported type. A function that returns Effect's or Foldkit's own values, such as a Foldkit page's init, update and view helpers, which return `Update.Return` or `Document`, is not a mapper, so those helpers live in their own modules. The rule follows a relative import one module deep to see that an alias such as a page's `UpdateReturn` names Foldkit's `Update.Return`; an alias of an Effect type, such as `Schema.Schema.Type<typeof Field>`, still names a domain value. A project whose tests build fixtures in test helpers switches it off for its test paths. `stack/function-imports-from-utilities` keeps free functions out of named imports. Only a utilities package's generic helpers are imported by name; a function or value about one type is a member of that type's companion, `DraftPage.of`, and a module's other helpers are reached through its namespace, `import * as Reader from "./Reader.ts"`. It reads syntax, so it reports a value import whose name doesn't start with a capital, from the project's own code: a relative path, or a package its `workspace` option names. Types, schemas, companions and namespaces are capitalized, so their named imports pass, as do type imports, namespace and default imports, and every other package's imports. Lowercase constants are reported too: most are functions built by a call, such as `Schema.is(X)`, or a type's own values, such as an empty draft, which belongs on the companion as `Draft.empty`. A project names its packages and its utilities with `functionImports`; without it, only relative imports are its own code.
 
 [src/oxlint.ts](src/oxlint.ts) is the list, with each choice's reason beside it. A rule earns a place in it only by improving the code; a rule that mostly produces workarounds doesn't.
 
@@ -21,7 +21,7 @@ Install it from a tag, beside the tools it configures:
 {
   "scripts": { "prepare": "effect-tsgo patch --oxlint && husky" },
   "devDependencies": {
-    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.7.2",
+    "@maguirekrist/stack-config": "github:maguirekrist/stack-config#v1.8.0",
     "@effect/tsgo": "0.67.5",
     "@foldkit/oxlint-plugin": "0.15.4",
     "oxlint": "1.90.0",
@@ -39,7 +39,7 @@ The project's base tsconfig extends this package's, which configures Effect's la
 }
 ```
 
-A project's `oxlint.config.ts` adds only its own paths: its Foldkit app folders, its exceptions and its import boundaries.
+A project's `oxlint.config.ts` adds only its own paths and names: its Foldkit app folders, its packages and utilities, its exceptions and its import boundaries. `workspace` lists the package names or scopes, such as `@app`, whose imports are the project's own code, and `utilities` the packages, with their subpaths, whose helpers it imports by name.
 
 ```ts
 import { defineConfig } from "oxlint";
@@ -55,7 +55,13 @@ export default defineConfig({
     maxWarnings: 0,
     reportUnusedDisableDirectives: "error",
   },
-  rules: stack.rules,
+  rules: {
+    ...stack.rules,
+    ...stack.functionImports({
+      workspace: ["@app"],
+      utilities: ["@app/utilities"],
+    }),
+  },
   overrides: [...stack.foldkitOverrides(["packages/web"])],
 });
 ```

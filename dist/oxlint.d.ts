@@ -19,6 +19,15 @@ export declare const plugins: NonNullable<OxlintConfig["plugins"]>;
 export declare const jsPlugins: NonNullable<OxlintConfig["jsPlugins"]>;
 export declare const categories: NonNullable<OxlintConfig["categories"]>;
 export declare const rules: Rules;
+/**
+ * `stack/function-imports-from-utilities` for a project: `workspace` names its
+ * own packages or scopes, such as `@app`, and `utilities` the packages, such as
+ * `@app/utilities`, whose helpers it imports by name.
+ */
+export declare const functionImports: (project: {
+    readonly workspace: ReadonlyArray<string>;
+    readonly utilities: ReadonlyArray<string>;
+}) => Rules;
 /** Foldkit's recommended rules and its own overrides, in the given Foldkit app folders. */
 export declare const foldkitOverrides: (apps: ReadonlyArray<string>) => Array<Override>;
 export {};

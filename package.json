@@ -1,6 +1,6 @@
 {
   "name": "@maguirekrist/stack-config",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "description": "The shared lint setup and coding standards for Foldkit, Effect and Alchemy Domain projects.",
   "type": "module",
   "repository": {
@@ -28,8 +28,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --test",
-    "check": "prettier --check . && tsc && git diff --exit-code dist && node --test"
+    "test": "node --test test/*.test.js",
+    "check": "prettier --check . && tsc && git diff --exit-code dist && node --test test/*.test.js"
   },
   "peerDependencies": {
     "@effect/tsgo": "^0.67.5",

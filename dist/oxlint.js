@@ -118,6 +118,11 @@ export const rules = {
     // A function that maps one type into another lives with one of them, so a
     // type's constructors are found where the type is.
     "stack/mapper-with-its-type": "error",
+    // Only a utilities package's helpers are imported by name: a type's
+    // functions are found on its companion, and a module's other helpers through
+    // its namespace. Here only relative imports are the project's own code;
+    // functionImports adds its packages and names its utilities.
+    "stack/function-imports-from-utilities": "error",
     // Plain JavaScript hygiene.
     "no-underscore-dangle": ["error", { allow: ["_tag"] }],
     "import/no-unassigned-import": ["error", { allow: ["**/*.css"] }],
@@ -127,6 +132,14 @@ export const rules = {
     "no-var": "error",
     "prefer-const": "error",
 };
+/**
+ * `stack/function-imports-from-utilities` for a project: `workspace` names its
+ * own packages or scopes, such as `@app`, and `utilities` the packages, such as
+ * `@app/utilities`, whose helpers it imports by name.
+ */
+export const functionImports = (project) => ({
+    "stack/function-imports-from-utilities": ["error", project],
+});
 /** Foldkit's presets name only "error" and "off". */
 const foldkitRules = (presetRules) => Object.fromEntries(Object.entries(presetRules).map(([name, severity]) => [
     name,

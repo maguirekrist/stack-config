@@ -75,3 +75,16 @@ test("a project's config passes a Foldkit page's update helpers in their own mod
   );
   assert.equal(run.status, 0, run.stdout + run.stderr);
 });
+
+test("a project's config fails on a function imported by name from anywhere but its utilities", () => {
+  const run = spawnSync(
+    "pnpm",
+    ["exec", "oxlint", "-c", "oxlint.config.js", "imports.ts"],
+    { cwd: consumer, encoding: "utf8" },
+  );
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  const found = run.stdout.match(/stack\(function-imports-from-utilities\)/gu);
+  assert.equal(found?.length, 2, run.stdout);
+  assert.match(run.stdout, /`fieldOf`/u);
+  assert.match(run.stdout, /`holdingOf`/u);
+});

@@ -433,8 +433,7 @@ const bound = (clause: string): ReadonlyArray<string> => {
  * which the page's update helpers import. An alias of an Effect type, such as
  * `Schema.Schema.Type<typeof Field>`, still names a domain value.
  */
-const frameworkAliases = (file: string): ReadonlySet<string> => {
-  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+const frameworkAliases = (text: string): ReadonlySet<string> => {
   const frameworks = new Set(
     [...text.matchAll(IMPORT)].flatMap(([, clause = "", source = ""]) =>
       isFoldkit(source) ? bound(clause) : [],
@@ -597,15 +596,16 @@ const returnsFrom = (node: ESTree.Node): Mapper | undefined => {
 };
 
 /**
- * A function that maps one type into another lives with one of them, as part
- * of that type's companion, so a type's constructors are found where the type
- * is. The rule reads syntax, so a mapper is a top-level function, or a member
- * of a top-level object or namespace, that takes a parameter of a named type
- * and returns a value of another, imported type: a `.make(...)` on an imported
- * binding, or an object literal of data whose return type is imported. When
- * its module declares a parameter's type, the mapper belongs in the companion
- * bound to that type's name or the target's. When it declares none, a loose
- * mapper that takes an imported type lives with neither. Construction inside a
+ * A function that maps one type into another is a top-level export of the
+ * module that declares one of them, so callers reach it through that module's
+ * namespace, as `DraftPage.of`. The rule reads syntax, so a mapper is a
+ * top-level function, or a member of a top-level object or namespace, that
+ * takes a parameter of a named type and returns a value of another type: a
+ * `.make(...)` on a binding, or an object literal of data whose return type is
+ * named. A mapper that is a member of an object or namespace is reported,
+ * since a project has no companion objects. A top-level mapper passes when its
+ * module declares a type it takes or builds, and is reported when it takes an
+ * imported type and its module declares neither. Construction inside a
  * handler is not a mapper, Effect's and Foldkit's own values make no domain
  * value, an object with functions in it is an implementation, and a function
  * that takes `unknown` parses what a boundary hands over, so it lives at that
@@ -620,13 +620,13 @@ const mapperWithItsType: Rule = {
     type: "suggestion",
     docs: {
       description:
-        "A function that maps one type into another lives in the module of one of them, as part of that type's companion.",
+        "A function that maps one type into another is a top-level export of the module that declares one of them, never a member of a companion object.",
     },
     messages: {
       mapper:
-        "{{name}} maps one type into another but lives with neither. Move it next to its source type or its target type, as part of that type's companion module, the way a schema's constructors live with the schema.",
-      companion:
-        "{{name}} maps {{source}} into {{target}} but isn't part of either's companion. Make it a member of `{{source}}`'s companion, the way a schema's constructors live with the schema.",
+        "`{{name}}` maps {{source}} into {{target}}, but its module declares neither. Move it into the module that declares `{{source}}` or `{{target}}`, as a top-level export, so callers reach it through that module's namespace, as `DraftPage.of`.",
+      member:
+        "`{{name}}` maps {{source}} into {{target}} as a member of `{{companion}}`, and a project has no companion objects. Export it as a top-level function of the module that declares `{{source}}` or `{{target}}`, so callers reach it through that module's namespace, as `DraftPage.of`.",
     },
   },
   create: (context) => {
@@ -634,10 +634,13 @@ const mapperWithItsType: Rule = {
     const aliases = new Map<string, ReadonlySet<string>>();
     const aliasesOf = (source: string): ReadonlySet<string> => {
       const file = resolve(dirname(context.physicalFilename), source);
-      const known = aliases.get(file) ?? frameworkAliases(file);
+      const known =
+        aliases.get(file) ??
+        frameworkAliases(existsSync(file) ? readFileSync(file, "utf8") : "");
       aliases.set(file, known);
       return known;
     };
+    const ownAliases = frameworkAliases(context.sourceCode.text);
     const domain = (name: string | undefined): name is string => {
       if (name === undefined) {
         return false;
@@ -649,6 +652,9 @@ const mapperWithItsType: Rule = {
         !(source.startsWith(".") && aliasesOf(source).has(name))
       );
     };
+    const mapped = (name: string | undefined): name is string =>
+      domain(name) ||
+      (name !== undefined && types.has(name) && !ownAliases.has(name));
     const built = (
       fn: Mapper,
       value: ESTree.Expression,
@@ -664,7 +670,7 @@ const mapperWithItsType: Rule = {
         value.callee.property.name === "make"
       ) {
         const name = rootName(value.callee.object);
-        return domain(name) ? name : undefined;
+        return mapped(name) ? name : undefined;
       }
       const returned = fn.returnType?.typeAnnotation;
       if (
@@ -673,7 +679,7 @@ const mapperWithItsType: Rule = {
         returned?.type === "TSTypeReference"
       ) {
         const name = rootName(returned.typeName);
-        return domain(name) ? name : undefined;
+        return mapped(name) ? name : undefined;
       }
       return undefined;
     };
@@ -697,32 +703,20 @@ const mapperWithItsType: Rule = {
       }
       const { name, companion } = home;
       const declared = sources.filter((source) => types.has(source));
-      const [source] = declared;
-      if (source !== undefined) {
-        if (
-          companion === undefined ||
-          ![...declared, target].includes(companion)
-        ) {
-          reported.add(fn);
-          context.report({
-            messageId: "companion",
-            node: name,
-            data: { name: name.name, source, target },
-          });
-        }
+      const imported = sources.filter((source) => imports.has(source));
+      const [source = imported.find(domain) ?? imported[0]] = declared;
+      if (
+        source === undefined ||
+        (companion === undefined && (declared.length > 0 || types.has(target)))
+      ) {
         return;
       }
-      if (
-        companion === undefined &&
-        sources.some((imported) => imports.has(imported))
-      ) {
-        reported.add(fn);
-        context.report({
-          messageId: "mapper",
-          node: name,
-          data: { name: name.name },
-        });
-      }
+      reported.add(fn);
+      context.report({
+        messageId: companion === undefined ? "mapper" : "member",
+        node: name,
+        data: { name: name.name, companion: companion ?? "", source, target },
+      });
     };
     return {
       ArrowFunctionExpression: (fn) => {
@@ -760,29 +754,52 @@ const listed = (
     : [];
 };
 
-/** A type, schema, companion or namespace is named in PascalCase; a free function or value isn't. */
+/** A type, schema or namespace is named in PascalCase; a free function or value isn't. */
 const CAPITALIZED = /^\p{Lu}/u;
 
+/** Where a camelCase or PascalCase name breaks into words: `parse|URL|For`. */
+const WORD_BREAK = /(?<=[\p{Ll}\d])(?=\p{Lu})|(?<=\p{Lu})(?=\p{Lu}\p{Ll})/u;
+
+/** A name's words, `emptyQuestionnaire` → `empty`, `Questionnaire`. */
+const wordsOf = (name: string): ReadonlyArray<string> => name.split(WORD_BREAK);
+
+/** Words joined back into a lowercase member name, `to`, `Draft` → `toDraft`. */
+const memberName = ([first = "", ...rest]: ReadonlyArray<string>): string =>
+  [
+    first === first.toUpperCase()
+      ? first.toLowerCase()
+      : first.charAt(0).toLowerCase() + first.slice(1),
+    ...rest.map((word) => word.charAt(0).toUpperCase() + word.slice(1)),
+  ].join("");
+
 /**
- * Only a utilities package's generic helpers are imported by name. A function
- * or value about one type is a member of that type's companion, as
- * `DraftPage.of`, and a module's other helpers are reached through its
- * namespace, `import * as Reader from "./Reader.ts"`. The rule reads syntax, so
- * it reports a value specifier whose imported name doesn't start with a
- * capital, imported from the project's own code: a relative path, or a package
- * the `workspace` option names. The `utilities` packages, external packages,
- * type imports and namespace and default imports are left alone.
+ * Only a utilities package's generic helpers are imported by name. A
+ * project's other functions and values are top-level exports of their
+ * modules, reached through the module's namespace, as `DraftPage.of` after
+ * `import * as DraftPage from "./DraftPage.ts"`. The rule reads syntax, so it
+ * reports a value specifier whose imported name doesn't start with a capital,
+ * imported from the project's own code: a relative path, or a package the
+ * `workspace` option names. The `utilities` packages, external packages, type
+ * imports and namespace and default imports are left alone. Through a
+ * namespace of the project's own code, it reports a lowercase member whose
+ * words repeat one of the namespace's, case aside, so `DraftPage.pageOf` is
+ * `DraftPage.of`. A member that is nothing but the repeat, such as a Foldkit
+ * view module's `FirmView.view`, is left alone: its name is the role the
+ * framework gives it, and there is no shorter one. Type positions such as
+ * `DraftPage.DraftPage` and capitalized members are left alone too.
  */
 const functionImportsFromUtilities: Rule = {
   meta: {
     type: "suggestion",
     docs: {
       description:
-        "Only a utilities package's helpers are imported by name; a type's functions live on its companion, and a module's other helpers are reached through its namespace.",
+        "Only a utilities package's helpers are imported by name; the project's other functions are reached through their module's namespace, by a name that doesn't repeat it.",
     },
     messages: {
       named:
-        "`{{name}}` is imported by name from the project's own code, and only a utilities package's helpers are. Move a generic helper into the utilities package. Make a function or value about one type a member of that type's companion, as `DraftPage.of`, not `DraftPage.pageOf`. Otherwise import its module as a namespace, `import * as Reader from \"./Reader.ts\"`.",
+        "`{{name}}` is imported by name from the project's own code, and only a utilities package's helpers are. Move a generic helper into the utilities package. Otherwise import its module as a namespace, `import * as DraftPage from \"./DraftPage.ts\"`, and call it as `DraftPage.of`, by a name that doesn't repeat the namespace.",
+      stutter:
+        "`{{namespace}}.{{name}}` repeats its namespace. Write `{{namespace}}.{{suggested}}`: the namespace already names the module.",
     },
     schema: [
       {
@@ -800,14 +817,51 @@ const functionImportsFromUtilities: Rule = {
     const [settings] = context.options;
     const isWorkspace = under(listed(settings, "workspace"));
     const isUtility = under(listed(settings, "utilities"));
+    const isOwn = (source: string): boolean =>
+      source.startsWith(".") || isWorkspace(source);
+    const namespaces = new Set(
+      context.sourceCode.ast.body.flatMap((statement) =>
+        statement.type === "ImportDeclaration" &&
+        statement.importKind !== "type" &&
+        isOwn(statement.source.value)
+          ? statement.specifiers.flatMap((specifier) =>
+              specifier.type === "ImportNamespaceSpecifier"
+                ? [specifier.local.name]
+                : [],
+            )
+          : [],
+      ),
+    );
     return {
+      MemberExpression: (node) => {
+        if (
+          node.computed ||
+          node.object.type !== "Identifier" ||
+          !namespaces.has(node.object.name) ||
+          node.property.type !== "Identifier" ||
+          CAPITALIZED.test(node.property.name)
+        ) {
+          return;
+        }
+        const namespace = node.object.name;
+        const { name } = node.property;
+        const repeated = new Set(
+          wordsOf(namespace).map((word) => word.toLowerCase()),
+        );
+        const words = wordsOf(name);
+        const kept = words.filter((word) => !repeated.has(word.toLowerCase()));
+        if (kept.length === 0 || kept.length === words.length) {
+          return;
+        }
+        context.report({
+          messageId: "stutter",
+          node,
+          data: { namespace, name, suggested: memberName(kept) },
+        });
+      },
       ImportDeclaration: (node) => {
         const source = node.source.value;
-        if (
-          node.importKind === "type" ||
-          isUtility(source) ||
-          !(source.startsWith(".") || isWorkspace(source))
-        ) {
+        if (node.importKind === "type" || isUtility(source) || !isOwn(source)) {
           return;
         }
         for (const specifier of node.specifiers) {

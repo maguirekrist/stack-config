@@ -115,13 +115,14 @@ export const rules = {
     "stack/no-tagged-literal": "error",
     // A type named after a schema is its Type, so the two never drift apart.
     "stack/type-from-schema": "error",
-    // A function that maps one type into another lives with one of them, so a
-    // type's constructors are found where the type is.
+    // A function that maps one type into another is a top-level export of the
+    // module that declares one of them, so a type's constructors are found
+    // where the type is, through that module's namespace.
     "stack/mapper-with-its-type": "error",
-    // Only a utilities package's helpers are imported by name: a type's
-    // functions are found on its companion, and a module's other helpers through
-    // its namespace. Here only relative imports are the project's own code;
-    // functionImports adds its packages and names its utilities.
+    // Only a utilities package's helpers are imported by name. The project's
+    // other functions are reached through their module's namespace, by a name
+    // that doesn't repeat it. Here only relative imports are the project's own
+    // code; functionImports adds its packages and names its utilities.
     "stack/function-imports-from-utilities": "error",
     // Plain JavaScript hygiene.
     "no-underscore-dangle": ["error", { allow: ["_tag"] }],

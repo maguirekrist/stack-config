@@ -1,0 +1,3 @@
+# Dependency updates take each package's newest release, so pnpm's default
+# wait for a release to age is off.
+minimumReleaseAge: 0

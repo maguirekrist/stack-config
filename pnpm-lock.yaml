@@ -187,6 +187,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@foldkit/oxlint-plugin>effect-oxlint': 0.5.1
+  '@types/node>undici-types': 8.12.4
+
 importers:
 
   .:
@@ -507,10 +511,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  effect-oxlint@0.4.0:
-    resolution: {integrity: sha512-IA3ihFKGK0JoZVSPPgPP58988jj4PZ5/asFOhaSYHwDyRRRbkBJn7FX8RiPi++MFpXQvb+3fQpKdPzOvUK9xPQ==}
+  effect-oxlint@0.5.1:
+    resolution: {integrity: sha512-c7ugoMbQhgadXx8ZdQBZlGXqk9BSF2hIMMHCvwBrT+p+yDGl+L92ZonZlPytXMLCpmID2d+2LUg6ceVLwCMOsQ==}
     peerDependencies:
-      effect: ^4.0.0
+      effect: ^4.1.0
 
   effect@4.1.4:
     resolution: {integrity: sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ==}
@@ -538,8 +542,8 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
-  undici-types@8.9.0:
-    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
+  undici-types@8.12.4:
+    resolution: {integrity: sha512-GNCQH3MbVGB8OAVAoTiLH8pu4wx5Ni3DWKpnBzGj3WDsi8EwmK0aOVBooNEt+g5YL1eHPxcS9XUTouwFU6j1kQ==}
 
 snapshots:
 
@@ -576,7 +580,7 @@ snapshots:
 
   '@foldkit/oxlint-plugin@0.15.4(effect@4.1.4)':
     dependencies:
-      effect-oxlint: 0.4.0(effect@4.1.4)
+      effect-oxlint: 0.5.1(effect@4.1.4)
     transitivePeerDependencies:
       - effect
 
@@ -641,7 +645,7 @@ snapshots:
 
   '@types/node@26.6.6':
     dependencies:
-      undici-types: 8.9.0
+      undici-types: 8.12.4
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
@@ -703,7 +707,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  effect-oxlint@0.4.0(effect@4.1.4):
+  effect-oxlint@0.5.1(effect@4.1.4):
     dependencies:
       '@oxlint/plugins': 1.93.0
       effect: 4.1.4
@@ -757,4 +761,4 @@ snapshots:
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
 
-  undici-types@8.9.0: {}
+  undici-types@8.12.4: {}

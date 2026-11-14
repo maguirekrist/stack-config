@@ -1,3 +1,11 @@
 # Dependency updates take each package's newest release, so pnpm's default
 # wait for a release to age is off.
 minimumReleaseAge: 0
+overrides:
+  # @foldkit/oxlint-plugin 0.15.4 asks for ^0.3.4 || ^0.4.0. 0.5 only adds to
+  # the API it imports, and Foldkit's rules report the same with it. Drop this
+  # once a Foldkit release takes ^0.5.
+  "@foldkit/oxlint-plugin>effect-oxlint": 0.5.1
+  # @types/node 26.6.6 asks for ~8.9.0, but Node 26.13.1 (.node-version) ships
+  # undici 8.12.4. Drop this once @types/node catches up.
+  "@types/node>undici-types": 8.12.4
